@@ -79,8 +79,10 @@ export class RectangularOffsetXGeometry extends RectangularGeometry{
 	}
 	adjust_xy(){
 		super.adjust_xy();
+		let c = 0;
 		for (let i = 0; i < this.x.length; i++){
-			if (i % 2 == 0) continue;
+			if (i % this.yCount == 0 && this.yCount % 2) c = (c + 1) % 2;
+			if (i % 2 == c) continue;
 			this.x[i] += this.offset;
 		}
 	}
