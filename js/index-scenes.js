@@ -5,6 +5,7 @@ import {Geometries} from "./phasedarray/geometry.js";
 import {PhasedArray} from "./phasedarray/phasedarray.js";
 import {FarfieldDomains} from "./phasedarray/farfield.js"
 import {SteeringDomains} from "./phasedarray/steering.js"
+import {PhasedArrayFeeds} from "./phasedarray/feed.js"
 import {Tapers} from "./phasedarray/tapers.js"
 import {linspace} from "./util.js";
 /** @import { SceneQueue } from "./scene/scene-queue.js" */
@@ -34,11 +35,12 @@ export class SceneControlGeometry extends SceneControlWithSelectorAutoBuild{
 export class SceneControlPhasedArray extends SceneControl{
 	static autoUpdateURL = false;
 	constructor(parent){
-		super(parent, ['phase-bits', 'atten-lsb', 'atten-bits', 'atten-manual', 'phase-manual']);
+		super(parent, ['phase-bits', 'atten-lsb', 'atten-bits', 'atten-manual', 'phase-manual', 'phase-dither']);
 		this.pa = null;
 		this.geometryControl = new SceneControlGeometry(this);
 		this.taperControl = new SceneControlAllTapers(this);
 		this.steerControl = new SceneControlSteeringDomain(this);
+		this.feedControl = new SceneControlFeed(this);
 		this.add_event_types(
 			'phased-array-changed',
 			'phased-array-phase-changed',
@@ -56,11 +58,13 @@ export class SceneControlPhasedArray extends SceneControl{
 		let needsPhase = this.steerControl.calculationWaiting;
 		let needsAtten = this.taperControl.calculationWaiting;
 		let needsRecalc = false;
-		let needsPhaseQ = this.changed['phase-bits'];
+		let needsFeed = false;
+		let needsPhaseQ = this.changed['phase-bits'] || this.changed['phase-dither'];
 		let needsAttenQ = this.changed['atten-bits'] || this.changed['atten-lsb'];
 		this.farfieldNeedsCalculation = false
 		this.geometryControl.add_to_queue(queue);
 		this.taperControl.add_to_queue(queue);
+		this.feedControl.add_to_queue(queue);
 
 		if (this.geometryControl.calculationWaiting || this.pa === null){
 			queue.add('Updating array...', () => {
@@ -72,10 +76,19 @@ export class SceneControlPhasedArray extends SceneControl{
 			)
 			needsPhase = true;
 			needsAtten = true;
+			needsFeed = true;
 			this.farfieldNeedsCalculation = true;
 		}
 		if (this.pa !== null){
 			needsRecalc = needsRecalc || this.pa.requestUpdate;
+		}
+		if (this.feedControl.calculationWaiting || needsFeed){
+			needsPhase = true;
+			needsAtten = true;
+			queue.add('Computing Illumination...', () => {
+				this.pa.set_feed_type(this.feedControl.activeFeed);
+				this.pa.compute_illumination();
+			});
 		}
 		if (needsPhase){
 			queue.add('Calculating phase...', () => {
@@ -100,9 +113,10 @@ export class SceneControlPhasedArray extends SceneControl{
 		if (needsPhaseQ){
 			queue.add('Quantizing phase...', () => {
 				const bits = Math.max(0, Math.min(10, this.find_element('phase-bits').value));
-				this.pa.quantize_phase(bits);
+				const dither = this.find_element('phase-dither').checked;
+				this.pa.quantize_phase(bits, dither);
 				this.trigger_event('phased-array-phase-changed', this.pa);
-				this.clear_changed('phase-bits');
+				this.clear_changed('phase-bits', 'phase-dither');
 			});
 			this.farfieldNeedsCalculation = true;
 		}
@@ -442,6 +456,27 @@ export class SceneControlSteeringDomain extends SceneControlWithSelector{
 		const obj = this.build_active_object();
 		this.clear_changed('theta', 'phi', 'steering-domain');
 		return [obj.theta_deg, obj.phi_deg];
+	}
+}
+
+export class SceneControlFeed extends SceneControlWithSelector{
+	static autoUpdateURL = false;
+	constructor(parent){
+		super(parent, 'feed-type', PhasedArrayFeeds);
+		this.activeFeed = null;
+	}
+	control_changed(key){
+		super.control_changed(key);
+		this.activeFeed = null;
+	}
+	get calculationWaiting(){ return this.activeFeed === null; }
+	add_to_queue(queue){
+		if (this.calculationWaiting){
+			queue.add('Building feed...', () => {
+					this.activeFeed = this.build_active_object();
+				}
+			)
+		}
 	}
 }
 

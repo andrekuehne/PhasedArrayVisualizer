@@ -92,8 +92,8 @@ export class FarfieldABC{
 			},
 			x: pa.geometry.x,
 			y: pa.geometry.y,
-			pha: pa.vectorPhase,
-			mag: pa.vectorMag,
+			pha: pa.vectorPhaseFarfieldCalc,
+			mag: pa.vectorMagFarfieldCalc,
 		}
 	}
 	cut(xc, xs, ys, axis){

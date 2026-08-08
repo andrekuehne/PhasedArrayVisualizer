@@ -201,29 +201,34 @@ export class ScenePlot2DGeometryPhase extends ScenePlot2DGeometryABC{
 		if (max === undefined) max = 180;
 		this.min = min;
 		this.max = max;
-		this.install_hover_item((i) => `${(this.pa.vectorPhase[i]*180/Math.PI).toFixed(2)} deg`);
+		this.install_hover_item((i) => `${((this.plotting_vector()[i] % 1.0)*360).toFixed(2)} deg`);
 		this._needsRescale = false;
-		this.install_popup('Phase', [{
-			'label': `Manual Phase (deg)`,
-			'type': 'number',
-			'min': 0,
-			'max': 360,
-			'id': 'value',
-			'value': 0,
-			'focus': true,
-		}], (i, config) => {
-			this.pa.set_manual_phase(i, config['override'], config['value']*Math.PI/180);
-		}, (i) => {
-			let ov;
-			if (this.pa.vectorPhaseIsManual[i]) ov = this.pa.vectorPhaseManual[i];
-			else ov = this.pa.vectorPhase[i];
-			const nv = (ov*180/Math.PI).toFixed(2);
-			return {
-				'value': nv,
-				'override': this.pa.vectorPhaseIsManual[i],
-				'current-value': `${nv} deg`
-			}
-		}, () => { this.pa.clear_all_manual_phase();})
+		if (this.allow_manual()){
+			this.install_popup('Phase', [{
+				'label': `Manual Phase (deg)`,
+				'type': 'number',
+				'min': 0,
+				'max': 360,
+				'id': 'value',
+				'value': 0,
+				'focus': true,
+			}], (i, config) => {
+				this.pa.set_manual_phase(i, config['override'], config['value']*Math.PI/180);
+			}, (i) => {
+				let ov;
+				if (this.pa.vectorPhaseIsManual[i]) ov = this.pa.vectorPhaseManual[i] / (2 * Math.PI);
+				else ov = this.plotting_vector()[i] % 1.0;
+				const nv = (ov*360).toFixed(2);
+				return {
+					'value': nv,
+					'override': this.pa.vectorPhaseIsManual[i],
+					'current-value': `${nv} deg`
+				}
+			}, () => { this.pa.clear_all_manual_phase();})
+		}
+	}
+	allow_manual(){
+		return true;
 	}
 	/**
 	* Bind a Phased Array Scene.
@@ -251,14 +256,18 @@ export class ScenePlot2DGeometryPhase extends ScenePlot2DGeometryABC{
 		});
 		this.queue.start("&nbsp;");
 	}
+	plotting_vector(){
+		return this.pa.vectorPhaseQuantizeFactor;
+	}
 	rescale_phase(){
 		const pa = this.pa;
 		const phaseMin = this.min;
 		const phaseMax = this.max;
 		const pd = phaseMax - phaseMin;
+		const v = this.plotting_vector();
 		this.vectorPhaseScale = new Float32Array(pa.geometry.length);
 		for (let i = 0; i < pa.geometry.length; i++){
-			let pha = pa.vectorPhase[i]*180/Math.PI;
+			let pha = v[i]*360;
 			while (pha > 180) pha -= 360;
 			while (pha < -180) pha += 360;
 			this.vectorPhaseScale[i] = (pha - phaseMin)/pd;
@@ -266,6 +275,15 @@ export class ScenePlot2DGeometryPhase extends ScenePlot2DGeometryABC{
 		this._needsRescale = false;
 	}
 	draw(){ return super.draw(this.vectorPhaseScale); }
+}
+
+export class ScenePlot2DIlluminationPhase extends ScenePlot2DGeometryPhase{
+	allow_manual(){
+		return false;
+	}
+	plotting_vector(){
+		return this.pa.vectorPhaseIllumFactor;
+	}
 }
 
 export class ScenePlot2DGeometryAtten extends ScenePlot2DGeometryABC{
@@ -276,46 +294,55 @@ export class ScenePlot2DGeometryAtten extends ScenePlot2DGeometryABC{
 		if (max === undefined) max = 0;
 		this.min = min;
 		this.max = max;
-		this.install_hover_item((i) => `${this.pa.vectorAtten[i].toFixed(2)} dB`);
+		this.install_hover_item((i) => `${this.plotting_vector()[i].toFixed(2)} dB`);
 		this.addEventListener('data-min-changed', () => {this.build_queue(true);})
 		this._needsRescale = true;
-		this.install_popup('Attenuation', [{
-			'label': `Manual Attenuation (dB)`,
-			'type': 'number',
-			'min': -100,
-			'max': 100,
-			'id': 'value',
-			'step': 'none',
-			'value': 0,
-			'focus': true,
-		},{
-			'label': `Disable Element`,
-			'type': 'checkbox',
-			'id': 'disabled',
-		}], (i, config) => {
-			this.pa.set_manual_magnitude(i, config['override'], 10**(-Math.abs(config['value'])/20), config['disabled']);
-		}, (i) => {
-			let ov;
-			if (this.pa.vectorMagIsManual[i]) ov = this.pa.vectorMagManual[i];
-			else ov = this.pa.vectorMag[i];
-			const nv = (20*Math.log10(Math.abs(ov))).toFixed(2);
-			return {
-				'value': nv,
-				'override': this.pa.vectorMagIsManual[i],
-				'current-value': `${nv} dB`,
-				'disabled': this.pa.elementDisabled[i],
-			}
-		}, () => { this.pa.clear_all_manual_magnitude();})
+		if (this.allow_manual()){
+			this.install_popup('Attenuation', [{
+				'label': `Manual Attenuation (dB)`,
+				'type': 'number',
+				'min': -100,
+				'max': 100,
+				'id': 'value',
+				'step': 'none',
+				'value': 0,
+				'focus': true,
+			},{
+				'label': `Disable Element`,
+				'type': 'checkbox',
+				'id': 'disabled',
+			}], (i, config) => {
+				this.pa.set_manual_magnitude(i, config['override'], 10**(-Math.abs(config['value'])/20), config['disabled']);
+			}, (i) => {
+				let ov;
+				if (this.pa.vectorMagIsManual[i]) ov = this.pa.vectorMagManual[i];
+				else ov = this.pa.vectorMag[i];
+				const nv = (20*Math.log10(Math.abs(ov))).toFixed(2);
+				return {
+					'value': nv,
+					'override': this.pa.vectorMagIsManual[i],
+					'current-value': `${nv} dB`,
+					'disabled': this.pa.elementDisabled[i],
+				}
+			}, () => { this.pa.clear_all_manual_magnitude();})
+		}
+	}
+	allow_manual(){
+		return true;
+	}
+	plotting_vector(){
+		return this.pa.vectorAtten;
 	}
 	rescale_atten(){
 		const pa = this.pa;
 		const attenMin = this.min;
 		const attenMax = this.max;
 		const am = attenMax - attenMin;
-		const ma = Math.max(...pa.vectorAtten);
+		const va = this.plotting_vector();
+		const ma = Math.max(...va);
 		this.vectorAttenScaled = new Float32Array(pa.geometry.length);
 		for (let i = 0; i < pa.geometry.length; i++){
-			this.vectorAttenScaled[i] = -(pa.vectorAtten[i] - ma - attenMax)/am;
+			this.vectorAttenScaled[i] = -(va[i] - ma - attenMax)/am;
 		}
 		this._needsRescale = false;
 	}
@@ -345,5 +372,14 @@ export class ScenePlot2DGeometryAtten extends ScenePlot2DGeometryABC{
 			this.draw();
 		});
 		this.queue.start("&nbsp;");
+	}
+}
+
+export class ScenePlot2DIlluminationAtten extends ScenePlot2DGeometryAtten{
+	allow_manual(){
+		return false;
+	}
+	plotting_vector(){
+		return this.pa.vectorIllumAtten;
 	}
 }

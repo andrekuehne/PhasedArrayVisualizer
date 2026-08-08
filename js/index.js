@@ -1,7 +1,7 @@
 import {SceneControlPhasedArray, SceneControlFarfieldDomain, SceneTaperCuts} from "./index-scenes.js";
 import {ScenePlotFarfieldCuts} from "./scene/plot-1d/scene-plot-farfield-cuts.js";
 import {ScenePlotFarfield2D} from "./scene/plot-2d/scene-plot-2d-farfield.js";
-import {ScenePlot2DGeometryPhase, ScenePlot2DGeometryAtten} from "./scene/plot-2d/scene-plot-2d-geometry.js";
+import {ScenePlot2DGeometryPhase, ScenePlot2DGeometryAtten, ScenePlot2DIlluminationPhase, ScenePlot2DIlluminationAtten} from "./scene/plot-2d/scene-plot-2d-geometry.js";
 import {SceneParent} from "./scene/scene-abc.js"
 import {SceneTheme} from "./scene/scene-util.js";
 
@@ -28,10 +28,15 @@ export class PhasedArrayScene extends SceneParent{
 		this.plotTaper = new SceneTaperCuts(this, this.find_element('taper-canvas-1d'), 'taper-1d-colormap');
 		this.geoPhase = new ScenePlot2DGeometryPhase(this, this.find_element('geometry-phase-canvas'), 'geometry-phase-colormap');
 		this.geoAtten = new ScenePlot2DGeometryAtten(this, this.find_element('geometry-magnitude-canvas'), 'geometry-magnitude-colormap');
-		this.geoAtten.install_scale_control('atten-scale');
+		this.illumPhase = new ScenePlot2DIlluminationPhase(this, this.find_element('illumination-phase-canvas'), 'illumination-phase-colormap');
+		this.illumAtten = new ScenePlot2DIlluminationAtten(this, this.find_element('illumination-atten-canvas'), 'illumination-atten-colormap');
 
+		this.geoAtten.install_scale_control('atten-scale');
 		this.geoPhase.bind_phased_array_scene(this.arrayControl);
 		this.geoAtten.bind_phased_array_scene(this.arrayControl);
+		this.illumPhase.bind_phased_array_scene(this.arrayControl);
+		this.illumAtten.bind_phased_array_scene(this.arrayControl);
+		this.illumAtten.install_scale_control('illumination-atten-scale');
 		this.plot1D.bind_farfield_scene(this.farfieldControl);
 		this.plotFF.bind_farfield_scene(this.farfieldControl);
 		this.plotTaper.bind_phased_array_scene(this.arrayControl);

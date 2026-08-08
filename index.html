@@ -18,6 +18,7 @@
 	<script type="module" src="./js/index.js" defer></script>
 
 	<!-- Matomo -->
+	<!--
 	<script>
 		var _paq = window._paq = window._paq || [];
 		/* tracker methods like "setCustomDimension" should be called before "trackPageView" */
@@ -31,6 +32,7 @@
 			g.async=true; g.src=u+'matomo.js'; s.parentNode.insertBefore(g,s);
 		})();
 	</script>
+	-->
 	<!-- End Matomo Code -->
 </head>
 <body class="auto">
@@ -82,8 +84,28 @@
 					<label for="pa-atten-lsb">Atten. LSB (dB)</label>
 					<input type="number" min="0" max="5" value="0.5" step="0.25" id="pa-atten-lsb" name="pa-atten-lsb" />
 				</div>
+				<div class="form-group" id="pa-phase-dither-div">
+					<label for="pa-phase-dither">Dither Phase</label>
+					<input type="checkbox" id="pa-phase-dither" name="pa-phase-dither" value="false" />
+				</div>
 				<div class="form-group" style="font-size:0.7em;font-style: italic;">
 					0 bits would be no quantization.
+				</div>
+			</div>
+			<div>
+				<h3>Feed</h3>
+				<select id="pa-feed-type" style="width:100%;"></select>
+				<div class="form-group" id="pa-feed-par-1-div">
+					<label for="pa-feed-par-1"></label>
+					<input type="number" min="-90" max="90" value="0" id="pa-feed-par-1" name="pa-feed-par-1" />
+				</div>
+				<div class="form-group" id="pa-feed-par-2-div">
+					<label for="pa-feed-par-2"></label>
+					<input type="number" min="-90" max="90" value="0" id="pa-feed-par-2" name="pa-feed-par-2" />
+				</div>
+				<div class="form-group" id="pa-feed-par-3-div">
+					<label for="pa-feed-par-3"></label>
+					<input type="number" min="-90" max="90" value="0" id="pa-feed-par-3" name="pa-feed-par-3" />
 				</div>
 			</div>
 		</div>
@@ -159,6 +181,36 @@
 			</div>
 		</div>
 	</div>
+	<div class="canvas-grid">
+		<div class="canvas-container">
+			<div class="canvas-header"><h2>Illumination Phase</h2></div>
+			<div class="canvas-wrapper">
+				<canvas id="pa-illumination-phase-canvas" class="canvas-grid"></canvas>
+			</div>
+			<div class="canvas-footer footer-group">
+				<div>
+					<label for="pa-illumination-phase-colormap">Colormap</label>
+					<select id="pa-illumination-phase-colormap" name="pa-illumination-phase-colormap"></select>
+				</div>
+			</div>
+		</div>
+		<div class="canvas-container">
+			<div class="canvas-header"><h2>Illumination Attenuation</h2></div>
+			<div class="canvas-wrapper">
+				<canvas id="pa-illumination-atten-canvas" class="canvas-grid"></canvas>
+			</div>
+			<div class="canvas-footer footer-group">
+				<div>
+					<label for="pa-illumination-atten-scale">Scale</label>
+					<input type="number" max="200" min="5" value="40" id="pa-illumination-atten-scale" name="pa-illumination-atten-scale">
+				</div>
+				<div>
+					<label for="pa-illumination-atten-colormap">Colormap</label>
+					<select id="pa-illumination-atten-colormap" name="pa-illumination-atten-colormap"></select>
+				</div>
+			</div>
+		</div>
+	</div>
 	<div class="canvas-full">
 		<div class="canvas-container">
 			<div class="canvas-header"><h2>1-D Pattern Cuts</h2></div>
@@ -202,7 +254,7 @@
 	<div class="body-content">
 		<h2>About</h2>
 		<p>This tool allows you to change a phased array's geometry, element spacing, steering position, add sidelobe tapering, and other features.</p>
-		<p>This demo was created by <a href="https://github.com/jasondurbin" target="_blank">Jason Durbin</a>, a <a href="https://www.linkedin.com/in/jasondurbin/" target="_blank">free-lancing phased array engineer</a>.
+		<p>This demo was created by <a href="https://github.com/jasondurbin" target="_blank">Jason Durbin</a>, who is <a href="https://www.linkedin.com/in/jasondurbin/" target="_blank">currently an antenna engineer at Amazon Leo</a>.
 		<h2>Usage and Notes</h2>
 		<ul>
 			<li>Antenna elements are assumed to be isotropic. However, the directivity calculation assumes half-hemisphere radiation (e.g. no back lobes). Therefore, the computed directivity will be 3 dBi higher than using pure isotropic. Said in different terms, the individual element gain is +3.0 dBi.</li>

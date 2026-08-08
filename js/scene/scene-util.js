@@ -128,7 +128,7 @@ export class SceneURL{
 			});
 		}
 		ele.setAttribute('__url_bound', true);
-		let dv = ele.getAttribute('data-default-value');
+		let dv = element_default_value(ele);
 
 
 		if (dv === null){
@@ -150,13 +150,25 @@ export class SceneURL{
 	* */
 	check_element(param, ele){
 		let ev = element_getter(ele);
-		if (ev === "" || ele.getAttribute('data-default-value') == ev) this.delete(param);
+		if (ev === "" || element_default_value(ele) == ev) this.delete(param);
 		else this.set_param(param, ev);
 	}
 }
 
 export function element_saveable(ele){
 	return ['SELECT', 'OPTION', 'INPUT'].includes(ele.nodeName)
+}
+
+/**
+* Get element's default value.
+*
+* @param {HTMLElement} ele
+* @return {any}
+* */
+export function element_default_value(ele){
+	let dv = ele.getAttribute('data-default-value');
+	if (ele.type == "checkbox") return dv == "true" || dv === true;
+	return dv;
 }
 
 /**
@@ -174,6 +186,10 @@ export function element_setter(ele, value){
 			return true;
 		}
 		return false;
+	}
+	if (ele.type == "checkbox"){
+		ele.checked = value === true || value == "true" || value == "True";
+		return true;
 	}
 	if (ele.type == 'select-one'){
 		for (let i = 0; i < ele.length; i++) {
@@ -203,6 +219,7 @@ export function element_getter(ele){
 	if (ele.type == 'number') return Number(ele.value);
 	if (ele.type == 'text') return ele.value;
 	if (ele.type == 'submit') return null;
+	if (ele.type == 'checkbox') return ele.checked;
 	if (ele.type === undefined) return null;
 	if (ele.type == 'select-one'){
 		for (let i = 0; i < ele.length; i++) {

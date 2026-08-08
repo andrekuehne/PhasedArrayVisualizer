@@ -14,6 +14,15 @@ export class Geometry{
 		this.length = x.length;
 		this.x = x;
 		this.y = y;
+
+		let sx = 0;
+		let sy = 0;
+		for (let i = 0; i < this.x.length; i++){
+			sx += x[i];
+			sy += y[i];
+		}
+		this.x_center = sx / x.length;
+		this.y_center = sy / y.length;
 	}
 	auto_compute_dx_dy(index){
 		let dr = Infinity;
