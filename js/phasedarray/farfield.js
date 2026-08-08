@@ -181,16 +181,18 @@ export class FarfieldSpherical extends FarfieldABC{
 export class FarfieldUV extends FarfieldABC{
 	static title = 'UV';
 	static domain = 'uv';
+	static args = [...FarfieldABC.args, 'farfield-uv-bound'];
 	static controls = {
 		'farfield-domain': {'title': null},
 		'farfield-ax1-points': {'title': "U Points", 'type': "int", 'default': 257, 'min': 1},
-		'farfield-ax2-points': {'title': "V Points", 'type': "int", 'default': 257, 'min': 1}
+		'farfield-ax2-points': {'title': "V Points", 'type': "int", 'default': 257, 'min': 1},
+		'farfield-uv-bound': {'title': "U/V Bound", 'type': "float", 'default': 1, 'min': 0.1, 'step': 0.1},
 	};
 	constructor(uPoints, vPoints, uMax, vMax){
 		super(uPoints, vPoints);
 		[uPoints, vPoints] = this.meshPoints;
 		if (uMax === undefined) uMax = 1;
-		if (vMax === undefined) vMax = 1;
+		if (vMax === undefined) vMax = uMax;
 		this.uPoints = uPoints;
 		this.vPoints = vPoints;
 		this.u = linspace(-uMax, uMax, this.uPoints);

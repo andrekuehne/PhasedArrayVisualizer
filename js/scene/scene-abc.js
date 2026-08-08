@@ -32,13 +32,23 @@ export class SceneObjectParameterMap{
 		this.last = this.default;
 		this.title = cDict['title'];
 		this.deactivate();
+		const lbl_display = this.label.style.display;
+		const ele_display = this.ele.style.display;
+		const hide = () => {
+			this.label.style.display = "none";
+			this.ele.style.display = "none";
+		}
+		const show = () => {
+			this.label.style.display = lbl_display;
+			this.ele.style.display = ele_display;
+		}
 		if (this.div !== null){
-			this.hide = () => {this.div.style.display = "none";};
-			this.show = () => {this.div.style.display = "flex";};
+			this.hide = () => {this.div.style.display = "none"; hide()};
+			this.show = () => {this.div.style.display = "flex"; show()};
 		}
 		else{
-			this.hide = () => {};
-			this.show = () => {};
+			this.hide = () => {hide()};
+			this.show = () => {show()};
 		}
 	}
 	set_value(value){
@@ -382,6 +392,7 @@ export class SceneControlWithSelector extends SceneControl{
 				const min = def['min'];
 				if (min === undefined);
 				else if (v < min){
+					console.log(">>>>", v, min)
 					v = min;
 					ele.value = v;
 				}

@@ -300,6 +300,24 @@ export class PlotFarfield2DEngineUV extends PlotFarfield2DEngineABC{
 		this.add_u_grid(this.uSteps);
 		this.add_v_grid(this.vSteps);
 		this.add_border();
+		this.add_visible_circle(ur, vr);
+	}
+	add_visible_circle(ur, vr){
+		const canvas = this.canvas;
+		const ctx = canvas.getContext('2d');
+		const rect = canvas.getBoundingClientRect();
+		ctx.save();
+		ctx.scale(CANVAS_SCALER, CANVAS_SCALER);
+		ctx.scale(1/rect.width, 1/rect.height);
+
+		ctx.beginPath();
+		ctx.ellipse(0, 0, rect.width/2.0 * 1 / ur, rect.height/2.0 * 1 / vr, 0, 0, Math.PI * 2);
+		ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+		ctx.setLineDash([5, 5]);
+		ctx.lineWidth = 1;
+		ctx.stroke();
+		ctx.closePath();
+		ctx.restore();
 	}
 	add_border(){
 		const canvas = this.canvas;
@@ -320,6 +338,7 @@ export class PlotFarfield2DEngineUV extends PlotFarfield2DEngineABC{
 		ctx.lineWidth = 1;
 		ctx.stroke();
 		ctx.closePath();
+		ctx.restore();
 	}
 	add_u_grid(steps){
 		const canvas = this.canvas;

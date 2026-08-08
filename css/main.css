@@ -201,6 +201,7 @@ select{
 .footer-group > div{
 	white-space: nowrap;
 	font-size:0.9em;
+	margin: 1px 0;
 }
 .footer-group input,
 .footer-group select{
@@ -296,6 +297,8 @@ canvas{
 	margin: 4px 0 10px 0;
 	text-align: right;
 	font-size: 0.8em;
+	border: 1px solid var(--canvas-border-color);
+	padding: 2px;
 }
 #popup-overlay{
 	position: fixed;
