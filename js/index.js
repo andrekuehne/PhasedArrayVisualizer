@@ -1,7 +1,7 @@
 import {SceneControlPhasedArray, SceneControlFarfieldDomain, SceneTaperCuts} from "./index-scenes.js";
 import {ScenePlotFarfieldCuts} from "./scene/plot-1d/scene-plot-farfield-cuts.js";
 import {ScenePlotFarfield2D} from "./scene/plot-2d/scene-plot-2d-farfield.js";
-import {ScenePlot2DGeometryPhase, ScenePlot2DGeometryAtten, ScenePlot2DIlluminationPhase, ScenePlot2DIlluminationAtten} from "./scene/plot-2d/scene-plot-2d-geometry.js";
+import {ScenePlot2DGeometryGeneric} from "./scene/plot-2d/scene-plot-2d-geometry.js";
 import {SceneParent} from "./scene/scene-abc.js"
 import {SceneTheme} from "./scene/scene-util.js";
 
@@ -26,26 +26,29 @@ export class PhasedArrayScene extends SceneParent{
 		this.plotFF = new ScenePlotFarfield2D(this, this.find_element('farfield-canvas-2d'), 'farfield-2d-colormap');
 		this.plot1D = new ScenePlotFarfieldCuts(this, this.find_element('farfield-canvas-1d'), 'farfield-1d-colormap');
 		this.plotTaper = new SceneTaperCuts(this, this.find_element('taper-canvas-1d'), 'taper-1d-colormap');
-		this.geoPhase = new ScenePlot2DGeometryPhase(this, this.find_element('geometry-phase-canvas'), 'geometry-phase-colormap');
-		this.geoAtten = new ScenePlot2DGeometryAtten(this, this.find_element('geometry-magnitude-canvas'), 'geometry-magnitude-colormap');
-		this.illumPhase = new ScenePlot2DIlluminationPhase(this, this.find_element('illumination-phase-canvas'), 'illumination-phase-colormap');
-		this.illumAtten = new ScenePlot2DIlluminationAtten(this, this.find_element('illumination-atten-canvas'), 'illumination-atten-colormap');
+		this.geoPlot1 = new ScenePlot2DGeometryGeneric(this, this.find_element('geo-canvas-1'), "Element", "deg");
+		this.geoPlot2 = new ScenePlot2DGeometryGeneric(this, this.find_element('geo-canvas-2'), "Element", "dB");
 
-		this.geoAtten.install_scale_control('atten-scale');
-		this.geoPhase.bind_phased_array_scene(this.arrayControl);
-		this.geoAtten.bind_phased_array_scene(this.arrayControl);
-		this.illumPhase.bind_phased_array_scene(this.arrayControl);
-		this.illumAtten.bind_phased_array_scene(this.arrayControl);
-		this.illumAtten.install_scale_control('illumination-atten-scale');
+		this.geoPlot1.bind_phased_array_scene(this.arrayControl);
+		this.geoPlot2.bind_phased_array_scene(this.arrayControl);
 		this.plot1D.bind_farfield_scene(this.farfieldControl);
 		this.plotFF.bind_farfield_scene(this.farfieldControl);
 		this.plotTaper.bind_phased_array_scene(this.arrayControl);
 		this.plot1D.install_scale_control('farfield-1d-scale');
 		this.plotFF.install_scale_control('farfield-2d-scale');
 		this.farfieldControl.add_max_monitor('directivity', (v) => {
-			this.find_element('directivity-max').innerHTML = `Directivity: ${(10*Math.log10(v)).toFixed(2)} dB`
+			let idir = 4 * Math.PI * this.arrayControl.pa.geometry.area;
+			this.find_element('directivity-max').innerHTML = `Directivity: ${(10*Math.log10(v)).toFixed(1)} dB`
+			this.find_element('calc-directivity').innerHTML = `${(10*Math.log10(v)).toFixed(1)} dB`
+			this.find_element('aperture-efficiency').innerHTML = `${((v / idir) * 100).toFixed(1)} % (${(10 * Math.log10(v / idir)).toFixed(1)} dB)`
 		});
 
+		this.arrayControl.addEventListener("phased-array-calculation-changed", () => {
+			let idir = 4 * Math.PI * this.arrayControl.pa.geometry.area;
+			this.find_element('ideal-directivity').innerHTML = `${(10 * Math.log10(idir)).toFixed(1)} dB`
+			this.find_element('calc-area').innerHTML = `${this.arrayControl.pa.geometry.area.toFixed(1)} λ<sup>2</sup>`
+			this.find_element('element-count').innerHTML = `${this.arrayControl.pa.geometry.length}`
+		});
 		this.find_element('refresh').addEventListener('click', () => {
 			this.update_url_parameters();
 			this.build_queue();
@@ -56,6 +59,7 @@ export class PhasedArrayScene extends SceneParent{
 		});
 		this.create_popup_overlay();
 		this.bind_url_elements();
+		this.trigger_event('scene-loaded');
 	}
 	build_queue(){
 		this.queue.reset();

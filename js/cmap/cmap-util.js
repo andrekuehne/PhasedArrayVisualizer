@@ -1,16 +1,22 @@
 export class ColormapControl{
 	constructor(selector, defaultSelection){
+		this.useCaller = (typeof defaultSelection === 'function');
+		this.caller = defaultSelection;
 		this.changed = true;
 		this.selector = selector;
 		if (defaultSelection === undefined) defaultSelection = 'viridis';
+		if (this.useCaller) defaultSelection = "default";
 		this.defaultSelection = defaultSelection;
-		this.constructor.Colormaps.forEach((cm) => {
+
+		const _add_ele = cm => {
 			const ele = document.createElement('option');
 			ele.value = cm;
 			ele.innerHTML = cm;
 			selector.appendChild(ele);
 			if (defaultSelection == cm) ele.selected = true;
-		});
+		}
+		if (this.useCaller) _add_ele(defaultSelection);
+		this.constructor.Colormaps.forEach(_add_ele);
 		selector.addEventListener('change', () => {
 			this.changed = true;
 		});
@@ -22,9 +28,22 @@ export class ColormapControl{
 	cmap(){
 		const cms = this.constructor.Colormaps;
 		const find_colormap = this.constructor.find_colormap;
+		let offset = 0;
+
+		if (this.useCaller){
+			let cs = this.caller();
+			let ss = this.selector[0].selected;
+			for (let i = 0; i < cms.length; i++){
+				if (ss && cms[i] == cs) this.selector[i + 1].style.fontStyle = 'italic';
+				else this.selector[i + 1].style.fontStyle = '';
+			}
+			if (ss) return find_colormap(cs);
+			offset += 1;
+		}
 		for (let i = 0; i < cms.length; i++)
-			if (this.selector[i].selected)
+			if (this.selector[i + offset].selected)
 				return find_colormap(cms[i]);
+		if (this.useCaller) return find_colormap(this.caller());
 		return find_colormap(this.defaultSelection);
 	}
 }

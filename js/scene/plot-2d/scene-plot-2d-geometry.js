@@ -1,6 +1,9 @@
 import {ScenePlotABC} from "../scene-plot-abc.js"
+import {GeometryViews, GeometryViewConversions} from "../../phasedarray/geometry-views.js"
+import {SceneControlWithSelector} from "../scene-abc.js"
 /** @import { SceneControlPhasedArray } from "../../index-scenes.js"*/
 /** @import { PhasedArray } from "../../phasedarray/phasedarray.js"*/
+/** @import { ElementPhase } from "../../phasedarray/geometry-views.js"*/
 
 export class ScenePlot2DGeometryABC extends ScenePlotABC{
 	constructor(parent, canvas, cmapKey, defaultCMAP, strokeColor){
@@ -13,6 +16,8 @@ export class ScenePlot2DGeometryABC extends ScenePlotABC{
 		this.create_hover_items();
 		this.create_progress_bar();
 		this.create_queue();
+		this._popup_args = null;
+		this._popup_installed = false;
 	}
 	event_to_id(e){
 		let i = null;
@@ -121,8 +126,16 @@ export class ScenePlot2DGeometryABC extends ScenePlotABC{
 		}
 	}
 	build_queue(){ throw Error("Don't call generic build_queue."); }
+	uninstall_popup(){
+		this._popup_args = null;
+	}
 	install_popup(dtype, controls, changedCallback, updaterCallback, clearAllCallback){
+		this._popup_args = [dtype, controls, changedCallback, updaterCallback, clearAllCallback];
+		if (this._popup_installed) return;
+		this._popup_installed = true;
+
 		const _show_popup = (e) => {
+			if (this._popup_args === null) return;
 			if (e.pointerType == 'touch' && e.type == 'click') return;
 			if (this.queue.running) return;
 			if (!this.isValid) return;
@@ -142,7 +155,7 @@ export class ScenePlot2DGeometryABC extends ScenePlotABC{
 				'type': 'span',
 				'id': 'loc',
 			},{
-				'label': `Current ${dtype}:`,
+				'label': `Current ${this._popup_args[0]}:`,
 				'type': 'span',
 				'id': 'current-value',
 			},{
@@ -151,23 +164,23 @@ export class ScenePlot2DGeometryABC extends ScenePlotABC{
 				'id': 'override',
 				'value': true,
 			}];
-			controls.forEach((e) => dcontrols.push(e));
-			const popup = this.create_popup("Manually Change " + dtype, dcontrols, (config) => {
+			this._popup_args[1].forEach((e) => dcontrols.push(e));
+			const popup = this.create_popup("Manually Change " + this._popup_args[0], dcontrols, (config) => {
 				if (config === null) return;
-				changedCallback(_i(), config);
+				this._popup_args[2](_i(), config);
 				this.parent.build_queue();
 			});
 			const lbl = popup.element('loc');
 			const _i = () => Math.max(0, Math.min(pa.geometry.length - 1, popup.element('index').value));
 			const _update = () => {
 				const i = _i();
-				const res = updaterCallback(i);
+				const res = this._popup_args[3](i);
 				lbl.innerHTML = `(${pa.geometry.x[i].toFixed(2)}, ${pa.geometry.y[i].toFixed(2)})`;
 				for (const [key, value] of Object.entries(res)) popup.set_element_value(key, value);
 			}
 			popup.element('index').addEventListener('change', _update);
-			popup.add_action(`Clear All ${dtype} Overrides`).addEventListener('click', () => {
-				clearAllCallback();
+			popup.add_action(`Clear All ${this._popup_args[0]} Overrides`).addEventListener('click', () => {
+				this._popup_args[4]();
 				this.parent.build_queue();
 			});
 			popup.add_note(
@@ -176,7 +189,6 @@ export class ScenePlot2DGeometryABC extends ScenePlotABC{
 			_update();
 			popup.show_from_event(e);
 		}
-		this.canvas.addEventListener('click', _show_popup);
 		const onlongpress = (ele, cb) => {
 			let tid;
 			ele.addEventListener('touchstart', (e) => {
@@ -190,163 +202,116 @@ export class ScenePlot2DGeometryABC extends ScenePlotABC{
 			ele.addEventListener('touchend', (e) => { if (tid) clearTimeout(tid); else e.preventDefault();});
 			ele.addEventListener('touchmove', () => { if (tid) clearTimeout(tid);});
 		}
+		this.canvas.addEventListener('click', _show_popup);
 		onlongpress(this.canvas, _show_popup);
+		this._popup_enabled = true;
 	}
 }
 
-export class ScenePlot2DGeometryPhase extends ScenePlot2DGeometryABC{
-	constructor(parent, canvas, cmapKey, min, max){
-		super(parent, canvas, cmapKey, 'hsv');
-		if (min === undefined) min = -180;
-		if (max === undefined) max = 180;
-		this.min = min;
-		this.max = max;
-		this.install_hover_item((i) => `${((this.plotting_vector()[i] % 1.0)*360).toFixed(2)} deg`);
-		this._needsRescale = false;
-		if (this.allow_manual()){
-			this.install_popup('Phase', [{
-				'label': `Manual Phase (deg)`,
-				'type': 'number',
-				'min': 0,
-				'max': 360,
-				'id': 'value',
-				'value': 0,
-				'focus': true,
-			}], (i, config) => {
-				this.pa.set_manual_phase(i, config['override'], config['value']*Math.PI/180);
-			}, (i) => {
-				let ov;
-				if (this.pa.vectorPhaseIsManual[i]) ov = this.pa.vectorPhaseManual[i] / (2 * Math.PI);
-				else ov = this.plotting_vector()[i] % 1.0;
-				const nv = (ov*360).toFixed(2);
-				return {
-					'value': nv,
-					'override': this.pa.vectorPhaseIsManual[i],
-					'current-value': `${nv} deg`
-				}
-			}, () => { this.pa.clear_all_manual_phase();})
-		}
-	}
-	allow_manual(){
-		return true;
-	}
-	/**
-	* Bind a Phased Array Scene.
-	*
-	* @param {SceneControlPhasedArray} scene
-	*
-	* @return {null}
-	* */
-	bind_phased_array_scene(scene){
-		super.bind_phased_array_scene(scene);
-		scene.addEventListener('phased-array-phase-changed', () => {
-			this._needsRescale = true;
-			this.build_queue();
-		});
-	}
-	build_queue(){
-		this.queue.reset();
-		if (this._needsRescale){
-			this.queue.add('Rescaling phase...', () => {
-				this.rescale_phase();
-			});
-		}
-		this.queue.add('Drawing phase...', () => {
-			this.draw();
-		});
-		this.queue.start("&nbsp;");
-	}
-	plotting_vector(){
-		return this.pa.vectorPhaseQuantizeFactor;
-	}
-	rescale_phase(){
-		const pa = this.pa;
-		const phaseMin = this.min;
-		const phaseMax = this.max;
-		const pd = phaseMax - phaseMin;
-		const v = this.plotting_vector();
-		this.vectorPhaseScale = new Float32Array(pa.geometry.length);
-		for (let i = 0; i < pa.geometry.length; i++){
-			let pha = v[i]*360;
-			while (pha > 180) pha -= 360;
-			while (pha < -180) pha += 360;
-			this.vectorPhaseScale[i] = (pha - phaseMin)/pd;
-		}
-		this._needsRescale = false;
-	}
-	draw(){ return super.draw(this.vectorPhaseScale); }
-}
+export class ScenePlot2DGeometryGeneric extends ScenePlot2DGeometryABC{
+	constructor(parent, div, defaultView, defaultUnit){
+		if (defaultView === undefined) defaultView = "Element";
+		if (defaultUnit === undefined) defaultUnit = "deg";
+		let cid = div.id.substring(parent.prepend.length + 1);
+		let div_title = document.createElement("div");
+		let div_canvas = document.createElement("div");
+		let div_footer = document.createElement("div");
+		let div_group = document.createElement("div");
+		let div_sel = document.createElement("div");
+		let div_desc = document.createElement("div");
+		const header_title = document.createElement("h2");
+		let canvas = document.createElement("canvas");
+		let sel_cmap = document.createElement("select");
+		let sel_sel = document.createElement("select");
+		let sel_unit = document.createElement("select");
+		let inp_scale = document.createElement("input");
 
-export class ScenePlot2DIlluminationPhase extends ScenePlot2DGeometryPhase{
-	allow_manual(){
-		return false;
-	}
-	plotting_vector(){
-		return this.pa.vectorPhaseIllumFactor;
-	}
-}
+		let title_span = document.createElement("span");
+		title_span.innerHTML = "&nbsp;"
 
-export class ScenePlot2DGeometryAtten extends ScenePlot2DGeometryABC{
-	constructor(parent, canvas, cmapKey, min, max){
-		super(parent, canvas, cmapKey, 'inferno_r');
+		sel_cmap.id = parent.prepend + "-" + cid + "-cmap";
+		sel_sel.id = parent.prepend + "-" + cid + "-view";
+		sel_unit.id = parent.prepend + "-" + cid + "-unit";
+		canvas.className = "canvas-grid";
+		div_canvas.className = "canvas-wrapper";
+		div_title.className = "canvas-header";
+		div_footer.className = "canvas-footer";
+		div_group.className = "footer-group";
+		div_sel.className = "footer-group";
+		div_desc.className = "footer-group";
+
+		div_title.appendChild(header_title)
+		div_title.appendChild(title_span)
+		header_title.innerHTML = "TEST";
+		div_canvas.appendChild(canvas);
+
+		div.appendChild(div_title);
+		div.appendChild(div_canvas);
+		div.appendChild(div_footer);
+
+		const cdiv = (ele, txt) => {
+			let div = document.createElement("div");
+			let lbl = document.createElement("label");
+			lbl.innerHTML = txt;
+			lbl.htmlFor = ele.id;
+
+			div.appendChild(lbl);
+			div.appendChild(ele);
+			return div;
+		}
+		div_footer.appendChild(div_sel)
+		div_footer.appendChild(div_desc)
+		div_footer.appendChild(div_group)
+		div_sel.appendChild(cdiv(sel_sel, "View"));
+		div_sel.appendChild(cdiv(sel_unit, ""));
+		div_group.appendChild(cdiv(sel_cmap, "Colormap"));
+
+		const div_scale = cdiv(inp_scale, "Scale");
+		const find_cmap = () => {
+			if (this.active_unit === null) return "hsv";
+			return this.active_unit.default_cmap();
+		}
+		div_group.appendChild(div_scale);
+
+		super(parent, canvas, cid + "-cmap", find_cmap);
+		this.active_view = null;
+		this.active_unit = null;
+		this.unit_selector = this.find_element(cid + "-unit");
 		this.add_event_types('data-min-changed');
-		if (min === undefined) min = -40;
-		if (max === undefined) max = 0;
-		this.min = min;
-		this.max = max;
-		this.install_hover_item((i) => `${this.plotting_vector()[i].toFixed(2)} dB`);
-		this.addEventListener('data-min-changed', () => {this.build_queue(true);})
-		this._needsRescale = true;
-		if (this.allow_manual()){
-			this.install_popup('Attenuation', [{
-				'label': `Manual Attenuation (dB)`,
-				'type': 'number',
-				'min': -100,
-				'max': 100,
-				'id': 'value',
-				'step': 'none',
-				'value': 0,
-				'focus': true,
-			},{
-				'label': `Disable Element`,
-				'type': 'checkbox',
-				'id': 'disabled',
-			}], (i, config) => {
-				this.pa.set_manual_magnitude(i, config['override'], 10**(-Math.abs(config['value'])/20), config['disabled']);
-			}, (i) => {
-				let ov;
-				if (this.pa.vectorMagIsManual[i]) ov = this.pa.vectorMagManual[i];
-				else ov = this.pa.vectorMag[i];
-				const nv = (20*Math.log10(Math.abs(ov))).toFixed(2);
-				return {
-					'value': nv,
-					'override': this.pa.vectorMagIsManual[i],
-					'current-value': `${nv} dB`,
-					'disabled': this.pa.elementDisabled[i],
-				}
-			}, () => { this.pa.clear_all_manual_magnitude();})
+		this.addEventListener('data-min-changed', () => {this.build_queue();})
+		this.view_selector = new SceneControlGeometryViews(this, cid + "-view", defaultView);
+		this.unit_selector = new SceneControlGeometryViewConversions(this, cid + "-unit", defaultUnit)
+		this._needsNewData = false;
+		this._plot_data = null;
+		inp_scale.type = "number";
+		inp_scale.max = "200";
+		inp_scale.min = "5";
+		inp_scale.value = "40";
+		inp_scale.id = div.id + "-scale";
+
+		const update_title = () => {
+			let vkls = this.view_selector.selected_class();
+			let ukls = this.unit_selector.selected_class();
+			this.active_view = null;
+			this.active_unit = null;
+			this.build_queue();
+			header_title.innerHTML = `${vkls.title} ${ukls.user_title}`;
+			if (ukls.show_scale) div_scale.style.display = "";
+			else div_scale.style.display = "none";
+			div_desc.innerHTML = `<i style='font-size: 0.8em;'>${vkls.desc}</i>`;
 		}
+		this.view_selector.addEventListener('active-class-changed', () => {
+			update_title()
+		});
+		this.unit_selector.addEventListener('active-class-changed', () => {
+			update_title()
+		});
+		this.install_scale_control(inp_scale);
+		this.install_hover_item((i) => {
+			if (this.active_view === null || this.active_unit == null || this.pa == null) return "";
+			return this.active_unit.string_from_view(this.active_view, this.pa, i);
+		});
 	}
-	allow_manual(){
-		return true;
-	}
-	plotting_vector(){
-		return this.pa.vectorAtten;
-	}
-	rescale_atten(){
-		const pa = this.pa;
-		const attenMin = this.min;
-		const attenMax = this.max;
-		const am = attenMax - attenMin;
-		const va = this.plotting_vector();
-		const ma = Math.max(...va);
-		this.vectorAttenScaled = new Float32Array(pa.geometry.length);
-		for (let i = 0; i < pa.geometry.length; i++){
-			this.vectorAttenScaled[i] = -(va[i] - ma - attenMax)/am;
-		}
-		this._needsRescale = false;
-	}
-	draw(){ return super.draw(this.vectorAttenScaled); }
 	/**
 	* Bind a Phased Array Scene.
 	*
@@ -356,30 +321,126 @@ export class ScenePlot2DGeometryAtten extends ScenePlot2DGeometryABC{
 	* */
 	bind_phased_array_scene(scene){
 		super.bind_phased_array_scene(scene);
-		scene.addEventListener('phased-array-attenuation-changed', () => {
-			this._needsRescale = true;
+		scene.addEventListener('phased-array-calculation-changed', () => {
 			this.build_queue();
 		});
+		this.build_queue();
 	}
 	build_queue(){
 		this.queue.reset();
-		if (this._needsRescale){
-			this.queue.add('Rescaling attenuation...', () => {
-				this.rescale_atten();
+		if (this.view_selector === undefined) return;
+		if (this.pa === undefined) return;
+		if (this.active_view === null){
+			this.queue.add(`Creating ${this.view_selector.selected_class().title}...`, () => {
+				this.active_view = this.view_selector.build_active_object();
 			});
 		}
-		this.queue.add('Drawing attenuation...', () => {
+		if (this.active_unit === null){
+			this.queue.add(`Creating ${this.view_selector.selected_class().title} Unit...`, () => {
+				this.active_unit = this.unit_selector.build_active_object();
+				if (!this.active_view.constructor.allow_manual || this.active_unit.constructor.popup_type == null) this.uninstall_popup();
+				else if (this.active_unit.constructor.popup_type == "phase") this.install_phase_popup();
+				else if (this.active_unit.constructor.popup_type == "atten") this.install_atten_popup();
+			});
+		}
+		this.queue.add(`Scaling ${this.view_selector.selected_class().title}...`, () => {
+			this._plot_data = this.active_unit.convert_from_view(this.active_view, this.pa, this.min);
+		});
+		this.queue.add(`Drawing ${this.view_selector.selected_class().title}...`, () => {
 			this.draw();
 		});
 		this.queue.start("&nbsp;");
 	}
+	draw(){ return super.draw(this._plot_data); }
+	install_phase_popup(){
+		this.install_popup('Phase', [{
+			'label': `Manual Phase (deg)`,
+			'type': 'number',
+			'min': 0,
+			'max': 360,
+			'id': 'value',
+			'value': 0,
+			'focus': true,
+		}], (i, config) => {
+			this.pa.set_manual_phase(i, config['override'], config['value'] * Math.PI/180);
+		}, (i) => {
+			let ov;
+			if (this.pa.vectorPhaseIsManual[i]) ov = this.pa.vectorPhaseManual[i] / (2 * Math.PI);
+			else ov = this.pa.vQuantizePhaseFactor[i] % 1.0;
+			const nv = (ov * 360).toFixed(2);
+			return {
+				'value': nv,
+				'override': this.pa.vectorPhaseIsManual[i],
+				'current-value': `${nv} deg`
+			}
+		}, () => { this.pa.clear_all_manual_phase();})
+	}
+	install_atten_popup(){
+		this.install_popup('Attenuation', [{
+			'label': `Manual Attenuation (dB)`,
+			'type': 'number',
+			'min': -100,
+			'max': 100,
+			'id': 'value',
+			'step': 'none',
+			'value': 0,
+			'focus': true,
+		},{
+			'label': `Disable Element`,
+			'type': 'checkbox',
+			'id': 'disabled',
+		}], (i, config) => {
+			this.pa.set_manual_magnitude(i, config['override'], 10**(-Math.abs(config['value'])/20), config['disabled']);
+		}, (i) => {
+			let ov;
+			if (this.pa.vectorMagIsManual[i]) ov = this.pa.vectorMagManual[i];
+			else ov = this.pa.vQuantizeMag[i];
+			const nv = (20*Math.log10(Math.abs(ov))).toFixed(2);
+			return {
+				'value': nv,
+				'override': this.pa.vectorMagIsManual[i],
+				'current-value': `${nv} dB`,
+				'disabled': this.pa.elementDisabled[i],
+			}
+		}, () => { this.pa.clear_all_manual_magnitude();})
+	}
+}
+export class SceneControlGeometryViews extends SceneControlWithSelector{
+	static autoUpdateURL = false;
+	constructor(parent, key, defaultValue){
+		super(parent, key, GeometryViews, undefined, true, defaultValue);
+	}
+	/**
+	* Add callable objects to queue.
+	*
+	* @param {SceneQueue} queue
+	*
+	* @return {null}
+	* */
+	add_to_queue(queue){
+		const arrayControl = this.parent.arrayControl;
+		let needsRecalc = arrayControl.farfieldNeedsCalculation;
+
+		this.needsRedraw = needsRecalc;
+	}
 }
 
-export class ScenePlot2DIlluminationAtten extends ScenePlot2DGeometryAtten{
-	allow_manual(){
-		return false;
+export class SceneControlGeometryViewConversions extends SceneControlWithSelector{
+	static autoUpdateURL = false;
+	constructor(parent, key, defaultValue){
+		super(parent, key, GeometryViewConversions, undefined, true, defaultValue);
 	}
-	plotting_vector(){
-		return this.pa.vectorIllumAtten;
+	/**
+	* Add callable objects to queue.
+	*
+	* @param {SceneQueue} queue
+	*
+	* @return {null}
+	* */
+	add_to_queue(queue){
+		const arrayControl = this.parent.arrayControl;
+		let needsRecalc = arrayControl.farfieldNeedsCalculation;
+
+		this.needsRedraw = needsRecalc;
 	}
 }

@@ -92,58 +92,23 @@
 					0 bits would be no quantization.
 				</div>
 			</div>
-			<div>
-				<h3>Feed</h3>
-				<select id="pa-feed-type" style="width:100%;"></select>
-				<div class="form-group" id="pa-feed-par-1-div">
-					<label for="pa-feed-par-1"></label>
-					<input type="number" min="-90" max="90" value="0" id="pa-feed-par-1" name="pa-feed-par-1" />
-				</div>
-				<div class="form-group" id="pa-feed-par-2-div">
-					<label for="pa-feed-par-2"></label>
-					<input type="number" min="-90" max="90" value="0" id="pa-feed-par-2" name="pa-feed-par-2" />
-				</div>
-				<div class="form-group" id="pa-feed-par-3-div">
-					<label for="pa-feed-par-3"></label>
-					<input type="number" min="-90" max="90" value="0" id="pa-feed-par-3" name="pa-feed-par-3" />
-				</div>
+			<div id="pa-illumination-controls">
+				<h3>Illumination</h3>
 			</div>
 		</div>
 		<div class="pa-update-div">
-			<div style="display:flex; gap: 4px; justify-content: center;"><button id="pa-refresh">Update</button><button id="pa-reset">Reset</button></div>
+			<div style="display:flex; gap: 4px; justify-content: center;">
+				<button id="pa-refresh">Update</button>
+				<button id="pa-reset">Reset</button>
+			</div>
 			<progress id="pa-progress" max="100" value="70"></progress>
 			<div id="pa-status">Loading...</div>
 		</div>
 	</div>
 	<div class="canvas-grid">
-		<div class="canvas-container">
-			<div class="canvas-header"><h2>Element Phase</h2><span>&nbsp;</span></div>
-			<div class="canvas-wrapper">
-				<canvas id="pa-geometry-phase-canvas" class="canvas-grid"></canvas>
-			</div>
-			<div class="canvas-footer footer-group">
-				<div>
-					<label for="pa-geometry-phase-colormap">Colormap</label>
-					<select id="pa-geometry-phase-colormap" name="pa-geometry-phase-colormap"></select>
-				</div>
-			</div>
-		</div>
-		<div class="canvas-container">
-			<div class="canvas-header"><h2>Element Attenuation</h2><span>&nbsp;</span></div>
-			<div class="canvas-wrapper">
-				<canvas id="pa-geometry-magnitude-canvas" class="canvas-grid"></canvas>
-			</div>
-			<div class="canvas-footer footer-group">
-				<div>
-					<label for="pa-atten-scale">Scale</label>
-					<input type="number" max="200" min="5" value="40" id="pa-atten-scale" name="pa-atten-scale">
-				</div>
-				<div>
-					<label for="pa-geometry-magnitude-colormap">Colormap</label>
-					<select id="pa-geometry-magnitude-colormap" name="pa-geometry-magnitude-colormap"></select>
-				</div>
-			</div>
-		</div>
+		<div class="canvas-container" id="pa-geo-canvas-1"></div>
+		<div class="canvas-container" id="pa-geo-canvas-2"></div>
+
 		<div class="canvas-container">
 			<div class="canvas-header"><h2>2-D Radiation Pattern</h2><span id="pa-directivity-max">&nbsp;</span></div>
 			<div class="canvas-wrapper">
@@ -181,35 +146,15 @@
 			</div>
 		</div>
 	</div>
-	<div class="canvas-grid">
-		<div class="canvas-container">
-			<div class="canvas-header"><h2>Illumination Phase</h2></div>
-			<div class="canvas-wrapper">
-				<canvas id="pa-illumination-phase-canvas" class="canvas-grid"></canvas>
-			</div>
-			<div class="canvas-footer footer-group">
-				<div>
-					<label for="pa-illumination-phase-colormap">Colormap</label>
-					<select id="pa-illumination-phase-colormap" name="pa-illumination-phase-colormap"></select>
-				</div>
-			</div>
-		</div>
-		<div class="canvas-container">
-			<div class="canvas-header"><h2>Illumination Attenuation</h2></div>
-			<div class="canvas-wrapper">
-				<canvas id="pa-illumination-atten-canvas" class="canvas-grid"></canvas>
-			</div>
-			<div class="canvas-footer footer-group">
-				<div>
-					<label for="pa-illumination-atten-scale">Scale</label>
-					<input type="number" max="200" min="5" value="40" id="pa-illumination-atten-scale" name="pa-illumination-atten-scale">
-				</div>
-				<div>
-					<label for="pa-illumination-atten-colormap">Colormap</label>
-					<select id="pa-illumination-atten-colormap" name="pa-illumination-atten-colormap"></select>
-				</div>
-			</div>
-		</div>
+	<div class="text-group metric-table-group">
+		<h2>Metrics</h2>
+		<table class="metric-table">
+			<tr><td>Ideal Directivity</td><td id="pa-ideal-directivity"></span></td></tr>
+			<tr><td>Calculated Directivity</td><td id="pa-calc-directivity"></span></td></tr>
+			<tr><td>Aperture Efficiency</td><td id="pa-aperture-efficiency"></span></td></tr>
+			<tr><td>Area</td><td id="pa-calc-area"></span></td></tr>
+			<tr><td>Elements</td><td id="pa-element-count"></span></td></tr>
+		</table>
 	</div>
 	<div class="canvas-full">
 		<div class="canvas-container">
@@ -261,6 +206,7 @@
 			<li>The mesh can be made finer by increasing theta/phi, u/v, or az/el points. However, increasing the number of points may result in laggy performance.</li>
 			<li>Clicking (or long pressing) elements in the phase/attenuation plots allows you to manually set phase/attenuation. <b>Be sure to select "enable override."</b> Additionally, the attenuation pop-up allows you to disable elements.</li>
 			<li>Hovering (or touching) the 2-D farfield plot or geometry plots will show the value of the plot under the cursor.</li>
+			<li><strong id="help-illumination">Illumination</strong> [new Aug. 2026] can be used to estimate different types of arrays. For example, a reflectarray would use a spherical wave, traveling waves would use guided wave, etc.</li>
 		</ul>
 		<h2>Commercial Use</h2>
 		<p>This tool or any derivatives of this tool may not be hosted on commercial websites (internal or external) without approval. Of course, you are welcome to share the URL.</p>

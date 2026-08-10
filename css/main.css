@@ -200,12 +200,13 @@ select{
 }
 .footer-group > div{
 	white-space: nowrap;
-	font-size:0.9em;
+	font-size: 0.9em;
 	margin: 1px 0;
 }
 .footer-group input,
 .footer-group select{
 	padding: 2px;
+	margin-left: 4px;
 }
 .footer-group input{
 	max-width: 60px;
@@ -361,6 +362,21 @@ canvas{
 	font-size: 0.8em;
 	font-style: italic;
 	max-width: 300px;
+}
+.metric-table-group{
+	text-align: center;
+}
+.metric-table-group h2{
+	margin: 0;
+}
+.metric-table{
+	display: inline;
+	text-align: right;
+	border-collapse: collapse;
+}
+.metric-table td{
+	padding: 5px;
+	border: 1px solid var(--canvas-border-color);
 }
 @media (max-width: 1024px){
 	.canvas-grid{ flex-wrap: wrap; }

@@ -108,6 +108,7 @@ export class SceneObjectABC{
 			});
 		});
 		this._children = [];
+		this.add_event_types("scene-loaded");
 	}
 	/**
 	* Install an event listener similar to pure Javascript.
@@ -150,6 +151,7 @@ export class SceneObjectABC{
 	* @return {HTMLElement}
 	* */
 	find_element(id, allowError){
+		if (id instanceof HTMLElement) id = id.id.substring(this.prepend.length + 1);
 		if (this.elements[id] !== undefined) return this.elements[id];
 		let eid = this.prepend + "-" + id;
 		let ele = document.querySelector("#" + eid);
@@ -280,6 +282,7 @@ export class SceneControl extends SceneObjectABC{
 	constructor(parent, controls, autoUpdateURL){
 		super(parent.prepend, controls, autoUpdateURL);
 		this.parent = parent;
+		parent.addEventListener("scene-loaded", () => {this.trigger_event("scene-loaded")});
 		parent.add_child(this);
 		parent.addEventListener('reset', () => {this.reset_all()})
 	}
@@ -294,7 +297,7 @@ export class SceneControl extends SceneObjectABC{
 }
 
 export class SceneControlWithSelector extends SceneControl{
-	constructor(parent, primaryKey, classes, prepend, autoUpdateURL){
+	constructor(parent, primaryKey, classes, prepend, autoUpdateURL, defaultValue){
 		let keys = new Set([primaryKey]);
 		classes.forEach((kls) => {
 			keys = keys.union(new Set(Object.keys(kls.controls)));
@@ -345,7 +348,8 @@ export class SceneControlWithSelector extends SceneControl{
 				smap.add_src(x);
 			}
 		});
-		this.primarySelector.setAttribute('data-default-value', this.primarySelector[0].innerHTML);
+		if (defaultValue === undefined) defaultValue = this.primarySelector[0].innerHTML;
+		this.primarySelector.setAttribute('data-default-value', defaultValue);
 		this.primaryKey = primaryKey;
 
 		const _trigger_change = () => {
@@ -363,6 +367,9 @@ export class SceneControlWithSelector extends SceneControl{
 		this.objPars.forEach((obj) => {
 			obj.active_class_changed(kls);
 		});
+		parent.addEventListener("scene-loaded", () => {
+			_trigger_change();
+		})
 	}
 	find_object_map(key, kls){
 		if (kls === undefined) kls = this.selected_class();
@@ -392,7 +399,6 @@ export class SceneControlWithSelector extends SceneControl{
 				const min = def['min'];
 				if (min === undefined);
 				else if (v < min){
-					console.log(">>>>", v, min)
 					v = min;
 					ele.value = v;
 				}

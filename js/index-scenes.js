@@ -4,8 +4,9 @@ import {ScenePlot1D} from "./scene/plot-1d/scene-plot-1d.js";
 import {Geometries} from "./phasedarray/geometry.js";
 import {PhasedArray} from "./phasedarray/phasedarray.js";
 import {FarfieldDomains} from "./phasedarray/farfield.js"
+import {GeometryViews} from "./phasedarray/geometry-views.js"
 import {SteeringDomains} from "./phasedarray/steering.js"
-import {PhasedArrayFeeds} from "./phasedarray/feed.js"
+import {Illuminations} from "./phasedarray/illumination.js"
 import {Tapers} from "./phasedarray/tapers.js"
 import {linspace} from "./util.js";
 /** @import { SceneQueue } from "./scene/scene-queue.js" */
@@ -40,11 +41,12 @@ export class SceneControlPhasedArray extends SceneControl{
 		this.geometryControl = new SceneControlGeometry(this);
 		this.taperControl = new SceneControlAllTapers(this);
 		this.steerControl = new SceneControlSteeringDomain(this);
-		this.feedControl = new SceneControlFeed(this);
+		this.illumControl = new SceneControlIllumination(this);
 		this.add_event_types(
 			'phased-array-changed',
 			'phased-array-phase-changed',
 			'phased-array-attenuation-changed',
+			'phased-array-calculation-changed',
 		);
 	}
 	/**
@@ -58,13 +60,13 @@ export class SceneControlPhasedArray extends SceneControl{
 		let needsPhase = this.steerControl.calculationWaiting;
 		let needsAtten = this.taperControl.calculationWaiting;
 		let needsRecalc = false;
-		let needsFeed = false;
+		let needsIllum = false;
 		let needsPhaseQ = this.changed['phase-bits'] || this.changed['phase-dither'];
 		let needsAttenQ = this.changed['atten-bits'] || this.changed['atten-lsb'];
 		this.farfieldNeedsCalculation = false
 		this.geometryControl.add_to_queue(queue);
 		this.taperControl.add_to_queue(queue);
-		this.feedControl.add_to_queue(queue);
+		this.illumControl.add_to_queue(queue);
 
 		if (this.geometryControl.calculationWaiting || this.pa === null){
 			queue.add('Updating array...', () => {
@@ -76,17 +78,17 @@ export class SceneControlPhasedArray extends SceneControl{
 			)
 			needsPhase = true;
 			needsAtten = true;
-			needsFeed = true;
+			needsIllum = true;
 			this.farfieldNeedsCalculation = true;
 		}
 		if (this.pa !== null){
 			needsRecalc = needsRecalc || this.pa.requestUpdate;
 		}
-		if (this.feedControl.calculationWaiting || needsFeed){
+		if (this.illumControl.calculationWaiting || needsIllum){
 			needsPhase = true;
 			needsAtten = true;
 			queue.add('Computing Illumination...', () => {
-				this.pa.set_feed_type(this.feedControl.activeFeed);
+				this.pa.set_illumination_type(this.illumControl.activeIllumination);
 				this.pa.compute_illumination();
 			});
 		}
@@ -104,7 +106,7 @@ export class SceneControlPhasedArray extends SceneControl{
 		}
 		if (needsRecalc){
 			queue.add('Calculating vector...', () => {
-				this.pa.calculate_final_vector();
+				this.pa.calculate_requested_vector();
 				this.update_hidden_controls();
 			});
 			needsPhaseQ = true;
@@ -130,6 +132,10 @@ export class SceneControlPhasedArray extends SceneControl{
 			});
 			this.farfieldNeedsCalculation = true;
 		}
+		if (needsRecalc || needsPhaseQ || needsAttenQ){
+			queue.add('Calculating farfield vector change...', () => {
+				this.trigger_event('phased-array-calculation-changed', this.pa);
+			});}
 		this.phaseChanged = needsPhase;
 		this.attenChanged = needsAtten;
 	}
@@ -189,14 +195,18 @@ export class SceneControlTaper extends SceneControlWithSelectorAutoBuild{
 	static autoUpdateURL = false;
 	constructor(parent, key, htmlElement){
 		super(parent, 'taper', Tapers, htmlElement, key);
-		this.activeTaper = null;
+		this._activeTaper = null;
 	}
 	control_changed(key){
 		super.control_changed(key);
-		this.activeTaper = null;
+		this._activeTaper = null;
 	}
 	get calculationWaiting(){
 		return this.activeTaper === null;
+	}
+	get activeTaper(){
+		if (this._activeTaper === null) this._activeTaper = this.build_active_object();
+		return this._activeTaper;
 	}
 	/**
 	* Add callable objects to queue.
@@ -208,7 +218,7 @@ export class SceneControlTaper extends SceneControlWithSelectorAutoBuild{
 	add_to_queue(queue){
 		if (this.calculationWaiting){
 			queue.add('Building Taper...', () => {
-					this.activeTaper = this.build_active_object();
+					this._activeTaper = this.build_active_object();
 				}
 			)
 		}
@@ -348,7 +358,7 @@ export class SceneControlAllTapers extends SceneControl{
 			queue.add("Calculating taper...", () => {
 				const t = this.xControl.activeTaper;
 				const geo = src.pa.geometry;
-				src.pa.set_magnitude_weight(t.calculate_from_radial_geometry(geo.x, geo.y, geo.dx, geo.dy));
+				src.pa.set_magnitude_weight(t.calculate_from_radial_geometry(geo.r, geo.dx, geo.dy));
 				this.trigger_event('taper-changed');
 			});
 		}
@@ -459,21 +469,21 @@ export class SceneControlSteeringDomain extends SceneControlWithSelector{
 	}
 }
 
-export class SceneControlFeed extends SceneControlWithSelector{
+export class SceneControlIllumination extends SceneControlWithSelectorAutoBuild{
 	static autoUpdateURL = false;
 	constructor(parent){
-		super(parent, 'feed-type', PhasedArrayFeeds);
-		this.activeFeed = null;
+		super(parent, 'illumination-type', Illuminations, parent.find_element('illumination-controls'));
+		this.activeIllumination = null;
 	}
 	control_changed(key){
 		super.control_changed(key);
-		this.activeFeed = null;
+		this.activeIllumination = null;
 	}
-	get calculationWaiting(){ return this.activeFeed === null; }
+	get calculationWaiting(){ return this.activeIllumination === null; }
 	add_to_queue(queue){
 		if (this.calculationWaiting){
-			queue.add('Building feed...', () => {
-					this.activeFeed = this.build_active_object();
+			queue.add('Building illumination...', () => {
+					this.activeIllumination = this.build_active_object();
 				}
 			)
 		}

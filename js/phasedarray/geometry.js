@@ -21,8 +21,12 @@ export class Geometry{
 			sx += x[i];
 			sy += y[i];
 		}
-		this.x_center = sx / x.length;
-		this.y_center = sy / y.length;
+		sx = sx / x.length;
+		sy = sy / y.length;
+		this.x_center = sx;
+		this.y_center = sy;
+		this.r = Float32Array.from(x, (ix, i) => Math.sqrt((ix - sx) ** 2 + (y[i] - sy) ** 2));
+		this.area = this.compute_area();
 	}
 	auto_compute_dx_dy(index){
 		let dr = Infinity;
@@ -73,6 +77,7 @@ export class RectangularGeometry extends Geometry{
 		this.adjust_xy();
 	}
 	adjust_xy(){ return; }
+	compute_area(){ return this.dx * this.dy * this.x.length; }
 }
 
 export class RectangularOffsetXGeometry extends RectangularGeometry{
@@ -176,6 +181,7 @@ export class Hexagonal extends Geometry{
 			new Float32Array(y.map((v) => {return v*this.dy}))
 		)
 	}
+	compute_area(){ return this.dx * this.dy * this.x.length; }
 }
 
 export class HexagonalX extends Hexagonal{
@@ -235,6 +241,9 @@ export class CircularGeometry extends Geometry{
 		}
 		this.set_xy(Float32Array.from(x), Float32Array.from(y));
 	}
+	compute_area(){
+		return (this.maxRing**2 - this.minRing**2) * this.dy * this.dx * Math.PI;
+	}
 }
 
 export class SunflowerGeometry extends Geometry{
@@ -289,6 +298,9 @@ export class SunflowerGeometry extends Geometry{
 		}
 
 		this.set_xy(Float32Array.from(x), Float32Array.from(y));
+	}
+	compute_area(){
+		return (this.maxRing**2 - this.minRing**2) * this.dy * this.dx * Math.PI;
 	}
 }
 
@@ -347,6 +359,9 @@ export class SpiralGeometry extends Geometry{
 			}
 		}
 		this.set_xy(Float32Array.from(x), Float32Array.from(y));
+	}
+	compute_area(){
+		return this.dx * this.dy * this.x.length;
 	}
 }
 

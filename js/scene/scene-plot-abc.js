@@ -12,6 +12,7 @@ export class ScenePlotABC extends SceneObjectABC{
 	* */
 	constructor(parent, canvas, cmap){
 		super(parent.prepend, []);
+		parent.addEventListener("scene-loaded", () => {this.trigger_event("scene-loaded")});
 		parent.add_child(this);
 		this.parent = parent;
 		this.canvas = canvas;

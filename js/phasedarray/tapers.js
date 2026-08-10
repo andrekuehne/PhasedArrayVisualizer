@@ -12,13 +12,12 @@ export class Uniform{
 	static controls = {};
 	calculate_weights(x){ return ones(x.length); }
 	normalize_from_geometry(x, dx){ return normalize(x); }
-	normalize_from_radial_geometry(x, y, dx, dy){
-		const mr = Float32Array.from(x, (ix, i) => Math.sqrt(ix**2 + y[i]**2));
-		const maxR = Math.max(...mr);
-		return Float32Array.from(mr, (v) => v/maxR*0.5);
+	normalize_from_radial_geometry(r, dx, dy){
+		const maxR = Math.max(...r);
+		return Float32Array.from(r, (v) => v/maxR * 0.5);
 	}
 	calculate_from_geometry(x, dx){ return this.calculate_weights(this.normalize_from_geometry(x, dx)); }
-	calculate_from_radial_geometry(x, y, dx, dy){ return this.calculate_weights(this.normalize_from_radial_geometry(x, y, dx, dy)); }
+	calculate_from_radial_geometry(r, dx, dy){ return this.calculate_weights(this.normalize_from_radial_geometry(r, dx, dy)); }
 }
 
 export class TrianglePedestal extends Uniform{
@@ -419,6 +418,7 @@ export class RaisedPowerofCosine extends Uniform{
 	calculate_weights(x){
 		const a = this.pedestal;
 		const a0 = 1 - a;
+		console.log(x)
 		return Float32Array.from(x, (e) => a + a0*Math.cos(e*Math.PI)**this.m);
 	}
 }
