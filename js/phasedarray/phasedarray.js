@@ -1,7 +1,7 @@
 import {ones, normalize, zeros} from "../util.js";
-import { FeedUniform } from "./feed.js"
+import { IlluminationPlaneWave } from "./illumination.js"
 /** @import { GeometryHint } from "./geometry.js" */
-/** @import { FeedHint } from "./feed.js" */
+/** @import { IlluminationHint } from "./illumination.js" */
 
 export class PhasedArray{
 	/**
@@ -14,46 +14,88 @@ export class PhasedArray{
 		this.set_theta_phi(0, 0);
 		this.size = geometry.length;
 
-		this.vectorPhaseRawFactor = new Float32Array(this.size);
+		// ideal vectors that the element should be assigned to before quantization.
+		this.vIdealPhaseFactor = new Float32Array(this.size);
+
+		// requested vectors. this is the ideal vector with manual override applied.
+		this.vRequestedPhaseFactor = new Float32Array(this.size);
+		this.vRequestedMag = new Float32Array(this.size);
+
+		// tasked vectors. These are assigned after steering and attenuation.
+		this.vSteerPhaseFactor = new Float32Array(this.size);
+		this.vTaperMag = new Float32Array(this.size);
+
+		// Illumination vector that is illumination the array.
+		this.vIllumMag = new Float32Array(this.size);
+		this.vIllumPhaseFactor = new Float32Array(this.size);
+
+		// qunatized vector.
+		this.vQuantizePhaseFactor = new Float32Array(this.size);
+		this.vQuantizeMag = new Float32Array(this.size);
+
+		// vector ready for farfield calculation.
+		this.vFarfieldPhase = new Float32Array(this.size);
+		this.vFarfieldMag = new Float32Array(this.size);
+
+		// vector overrides.
 		this.vectorPhaseManual = zeros(this.size);
 		this.vectorPhaseIsManual = Array.from({length: this.size}, () => false);
-		this.vectorPhaseSubtract = new Float32Array(this.size);
-		this.vectorPhaseQuantizeFactor = new Float32Array(this.size);
-		this.vectorPhasePureFactor = new Float32Array(this.size);
-		this.vectorPhaseFarfieldCalc = new Float32Array(this.size);
-
-		this.vectorPhaseIllumFactor = new Float32Array(this.size);
-		this.vectorMagIllum = new Float32Array(this.size);
-		this.vectorIllumAtten = new Float32Array(this.size);
-
-		this.vectorMagRaw = new Float32Array(this.size);
 		this.vectorMagManual = zeros(this.size);
 		this.vectorMagIsManual = Array.from({length: this.size}, () => false);
 		this.elementDisabled = Array.from({length: this.size}, () => false);
-		this.vectorMag = new Float32Array(this.size);
-		this.vectorMagFarfieldCalc = new Float32Array(this.size);
-		this.vectorMagPure = new Float32Array(this.size);
-		this.vectorAtten = new Float32Array(this.size);
+
 		this.requestUpdate = true;
-		this.feed = null;
+		this.illum = null;
 	}
 	set_theta_phi(theta, phi){
 		this.theta = Number(theta);
 		this.phi = Number(phi);
 		this.requestUpdate = true;
 	}
+	create_taper_vectors(){
+		const vmag = new Float32Array(this.size);
+		const vpha = new Float32Array(this.size);
+		const vector = this.vTaperMag;
+		for (let i = 0; i < this.geometry.length; i++){
+			let m = vector[i];
+			vmag[i] = Math.abs(m);
+			if (m < 0) vpha[i] = 0.5;
+			else vpha[i] = 0.0;
+		}
+		return [vpha, vmag];
+	}
+	create_final_vectors(){
+		return [this.vQuantizePhaseFactor, this.vFarfieldMag];
+	}
+	create_steer_vectors(){
+		return [this.vSteerPhaseFactor, ones(this.size)];
+	}
+	create_ideal_vectors(){
+		const vmag = new Float32Array(this.size);
+		const vpha = new Float32Array(this.size);
+		const omag = this.vTaperMag;
+		const opha = this.vSteerPhaseFactor;
+
+		for (let i = 0; i < this.geometry.length; i++){
+			let m = omag[i];
+			let p = opha[i];
+			vmag[i] = Math.abs(m);
+			if (m < 0) p += 0.5;
+			vpha[i] = p % 1.0;
+		}
+		return [vpha, vmag];
+	}
 	/**
-	* Create a Phased Array object.
+	* Set illumination.
 	*
-	* @param {FeedHint} feed
+	* @param {IlluminationHint} illum
 	* */
-	set_feed_type(feed){
-		this.feed = feed;
+	set_illumination_type(illum){
+		this.illum = illum;
 	}
 	compute_illumination(){
-		if (this.feed === null) this.feed = new FeedUniform();
-		this.feed.compute_illumination(this);
-		this.vectorIllumAtten = Float32Array.from(this.vectorMagIllum, v => 20 * Math.log10(Math.abs(v)))
+		if (this.illum === null) this.illum = new IlluminationPlaneWave();
+		this.illum.compute_illumination(this);
 	}
 	compute_phase(){
 		const xf = Math.sin(this.theta*Math.PI/180)*Math.cos(this.phi*Math.PI/180);
@@ -65,16 +107,10 @@ export class PhasedArray{
 		const cy = this.geometry.y_center;
 		const p = -2 * Math.PI;
 		for (let i = 0; i < this.geometry.length; i++){
-			this.vectorPhaseRawFactor[i] = (((x[i] + cx) * xf + (y[i] + cy) * yf) - this.vectorPhaseIllumFactor[i]);
+			let s = (x[i] + cx) * xf + (y[i] + cy) * yf;
+			this.vSteerPhaseFactor[i] = s;
+			this.vIdealPhaseFactor[i] = s - this.vIllumPhaseFactor[i];
 		}
-	}
-	calculate_r_taper(){
-		const x = normalize(this.geometry.x);
-		const y = normalize(this.geometry.y);
-		const r = Float32Array.from(x, (ix, i) => Math.sqrt(ix**2 + y[i]**2));
-		const maxR = Math.max(...r);
-		this.vectorMagX = this.taperX.calculate_weights(Float32Array.from(r, (v) => v/maxR*0.5));
-		this.vectorMagY = ones(this.vectorMagX.length);
 	}
 	set_manual_phase(index, override, phaseRad){
 		let ov = this.vectorPhaseIsManual[index];
@@ -108,26 +144,26 @@ export class PhasedArray{
 		this.requestUpdate = true;
 	}
 	set_magnitude_weight(vector){
-		this.vectorMagRaw = vector;
+		this.vTaperMag = vector;
 		this.requestUpdate = true;
 	}
-	calculate_final_vector(){
-		const p = 2 * Math.PI;
+	calculate_requested_vector(){
+		const pf = 2 * Math.PI;
 		for (let i = 0; i < this.geometry.length; i++){
 			let p, m;
-			if (this.vectorPhaseIsManual[i]) p = this.vectorPhaseManual[i] / p;
-			else p = this.vectorPhaseRawFactor[i];
+			if (this.vectorPhaseIsManual[i]) p = this.vectorPhaseManual[i] / pf;
+			else p = this.vIdealPhaseFactor[i];
 			if (this.vectorMagIsManual[i]) {
 				if (this.elementDisabled[i]) m = 0;
 				else m = this.vectorMagManual[i];
 			}
-			else m = this.vectorMagRaw[i];
+			else m = this.vTaperMag[i];
 			if (m < 0) {
 				m = Math.abs(m)
 				p += 0.5;
 			}
-			this.vectorPhasePureFactor[i] = p;
-			this.vectorMagPure[i] = m;
+			this.vRequestedPhaseFactor[i] = p;
+			this.vRequestedMag[i] = m;
 		}
 		this.requestUpdate = false;
 	}
@@ -138,38 +174,29 @@ export class PhasedArray{
 		if (bits > 0) lsb = 1/2**bits;
 
 		for (let i = 0; i < this.geometry.length; i++){
-			let p = this.vectorPhasePureFactor[i] % 1.0;
-			if (bits <= 0) this.vectorPhaseQuantizeFactor[i] = p;
+			let p = this.vRequestedPhaseFactor[i] % 1.0;
+			if (bits <= 0) this.vQuantizePhaseFactor[i] = p;
 			else{
 				if (dither) p += lsb / 2 * Math.round(Math.random())
 				while (p < 0) p += 1;
-				this.vectorPhaseQuantizeFactor[i] = lsb * Math.round(p / lsb);
+				this.vQuantizePhaseFactor[i] = lsb * Math.round(p / lsb);
 			}
-			this.vectorPhaseFarfieldCalc[i] = -f * ((this.vectorPhaseQuantizeFactor[i] + this.vectorPhaseIllumFactor[i]) % 1.0);
+			this.vFarfieldPhase[i] = -f * ((this.vQuantizePhaseFactor[i] + this.vIllumPhaseFactor[i]) % 1.0);
 		}
 	}
 	quantize_attenuation(bits, lsb){
 		const maxQ = lsb*(2**bits - 1);
-		const maxV = Math.max(...this.vectorMagPure);
+		const maxV = Math.max(...this.vRequestedMag);
 		for (let i = 0; i < this.geometry.length; i++){
-			let m = this.vectorMagPure[i]/maxV;
+			let m = this.vRequestedMag[i]/maxV;
 			let a = -20*Math.log10(Math.abs(m));
-			if (bits <= 0 || lsb <= 0){
-				this.vectorMag[i] = m;
-				this.vectorAtten[i] = -a;
-			}
+			if (bits <= 0 || lsb <= 0) this.vQuantizeMag[i] = m;
 			else{
 				a = lsb*Math.round(a/lsb);
-				if (a > maxQ){
-					this.vectorAtten[i] = -Infinity;
-					this.vectorMag[i] = 0;
-				}
-				else{
-					this.vectorAtten[i] = -a;
-					this.vectorMag[i] = 10**(-a/20.0);
-				}
+				if (a > maxQ) this.vQuantizeMag[i] = 0;
+				else this.vQuantizeMag[i] = 10**(-a/20.0);
 			}
-			this.vectorMagFarfieldCalc[i] = this.vectorMag[i] * this.vectorMagIllum[i];
+			this.vFarfieldMag[i] = this.vQuantizeMag[i] * this.vIllumMag[i];
 		}
 	}
 }
