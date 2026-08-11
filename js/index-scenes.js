@@ -33,6 +33,13 @@ export class SceneControlGeometry extends SceneControlWithSelectorAutoBuild{
 	}
 }
 
+const CHANGE_ILLUM	= 1 << 0;
+const CHANGE_PHASE 	= 1 << 1;
+const CHANGE_ATTEN 	= 1 << 2;
+const CHANGE_PHASEQ = 1 << 3;
+const CHANGE_ATTENQ = 1 << 4;
+const CHANGE_PA 	= 1 << 5;
+
 export class SceneControlPhasedArray extends SceneControl{
 	static autoUpdateURL = false;
 	constructor(parent){
@@ -57,16 +64,16 @@ export class SceneControlPhasedArray extends SceneControl{
 	* @return {null}
 	* */
 	add_to_queue(queue){
-		let needsPhase = this.steerControl.calculationWaiting;
-		let needsAtten = this.taperControl.calculationWaiting;
-		let needsRecalc = false;
-		let needsIllum = false;
-		let needsPhaseQ = this.changed['phase-bits'] || this.changed['phase-dither'];
-		let needsAttenQ = this.changed['atten-bits'] || this.changed['atten-lsb'];
+		let changeFlag = 0;
 		this.farfieldNeedsCalculation = false
 		this.geometryControl.add_to_queue(queue);
 		this.taperControl.add_to_queue(queue);
 		this.illumControl.add_to_queue(queue);
+
+		if (this.steerControl.calculationWaiting) changeFlag |= CHANGE_PHASE;
+		if (this.taperControl.calculationWaiting) changeFlag |= CHANGE_ATTEN;
+		if (this.changed['phase-bits'] || this.changed['phase-dither']) changeFlag |= CHANGE_PHASEQ;
+		if (this.changed['atten-bits'] || this.changed['atten-lsb']) changeFlag |= CHANGE_ATTENQ;
 
 		if (this.geometryControl.calculationWaiting || this.pa === null){
 			queue.add('Updating array...', () => {
@@ -76,43 +83,35 @@ export class SceneControlPhasedArray extends SceneControl{
 					if (first) this.load_hidden_controls();
 				}
 			)
-			needsPhase = true;
-			needsAtten = true;
-			needsIllum = true;
+			changeFlag |= CHANGE_ILLUM | CHANGE_ATTEN | CHANGE_PHASE;
 			this.farfieldNeedsCalculation = true;
 		}
-		if (this.pa !== null){
-			needsRecalc = needsRecalc || this.pa.requestUpdate;
-		}
-		if (this.illumControl.calculationWaiting || needsIllum){
-			needsPhase = true;
-			needsAtten = true;
+		if (this.pa !== null && this.pa.requestUpdate) changeFlag |= CHANGE_PA;
+		if (this.illumControl.calculationWaiting || (changeFlag & CHANGE_ILLUM)){
+			changeFlag |= CHANGE_ATTEN | CHANGE_PHASE;
 			queue.add('Computing Illumination...', () => {
 				this.pa.set_illumination_type(this.illumControl.activeIllumination);
 				this.pa.compute_illumination();
 			});
 		}
-		if (needsPhase){
+		if (changeFlag & CHANGE_PHASE){
 			queue.add('Calculating phase...', () => {
 				const [theta, phi] = this.steerControl.get_theta_phi();
 				this.pa.set_theta_phi(theta, phi);
 				this.pa.compute_phase();
 			});
-			needsRecalc = true;
 		}
-		if (needsAtten){
+		if (changeFlag & CHANGE_ATTEN){
 			this.taperControl.add_calculator_queue(queue, this);
-			needsRecalc = true;
 		}
-		if (needsRecalc){
+		if (changeFlag){
 			queue.add('Calculating vector...', () => {
 				this.pa.calculate_requested_vector();
 				this.update_hidden_controls();
 			});
-			needsPhaseQ = true;
-			needsAttenQ = true;
+			changeFlag |= CHANGE_PHASEQ | CHANGE_ATTENQ;
 		}
-		if (needsPhaseQ){
+		if (changeFlag & CHANGE_PHASEQ){
 			queue.add('Quantizing phase...', () => {
 				const bits = Math.max(0, Math.min(10, this.find_element('phase-bits').value));
 				const dither = this.find_element('phase-dither').checked;
@@ -122,7 +121,7 @@ export class SceneControlPhasedArray extends SceneControl{
 			});
 			this.farfieldNeedsCalculation = true;
 		}
-		if (needsAttenQ){
+		if (changeFlag & CHANGE_ATTENQ){
 			queue.add('Quantizing attenuation...', () => {
 				const bits = Math.max(0, Math.min(10, this.find_element('atten-bits').value));
 				const lsb = Math.max(0, Math.min(5, this.find_element('atten-lsb').value));
@@ -132,12 +131,11 @@ export class SceneControlPhasedArray extends SceneControl{
 			});
 			this.farfieldNeedsCalculation = true;
 		}
-		if (needsRecalc || needsPhaseQ || needsAttenQ){
+		if (changeFlag){
 			queue.add('Calculating farfield vector change...', () => {
 				this.trigger_event('phased-array-calculation-changed', this.pa);
-			});}
-		this.phaseChanged = needsPhase;
-		this.attenChanged = needsAtten;
+			});
+		}
 	}
 	update_hidden_controls(){
 		const mconfig = {};
@@ -202,7 +200,7 @@ export class SceneControlTaper extends SceneControlWithSelectorAutoBuild{
 		this._activeTaper = null;
 	}
 	get calculationWaiting(){
-		return this.activeTaper === null;
+		return this._activeTaper === null;
 	}
 	get activeTaper(){
 		if (this._activeTaper === null) this._activeTaper = this.build_active_object();
@@ -358,7 +356,7 @@ export class SceneControlAllTapers extends SceneControl{
 			queue.add("Calculating taper...", () => {
 				const t = this.xControl.activeTaper;
 				const geo = src.pa.geometry;
-				src.pa.set_magnitude_weight(t.calculate_from_radial_geometry(geo.r, geo.dx, geo.dy));
+				src.pa.set_magnitude_weight(t.calculate_from_radial_geometry(geo));
 				this.trigger_event('taper-changed');
 			});
 		}
@@ -381,7 +379,7 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 	constructor(parent, key){
 		super(parent, key, FarfieldDomains);
 		this.ff = null;
-		this.validMaxMonitors = new Set(['directivity']);
+		this.validMaxMonitors = new Set(['directivity', 'ideal-directivity']);
 		this.maxMonitors = {};
 		this.add_event_types('farfield-changed', 'farfield-calculation-complete');
 	}
@@ -427,6 +425,7 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 				for (const [key, value] of Object.entries(this.maxMonitors)){
 					let val;
 					if (key == 'directivity') val = this.ff.dirMax;
+					else if (key == "ideal-directivity") val = this.ff.idealDirectivity;
 					else throw Error(`Unknown max key ${key}.`)
 					value.forEach((e) => e(val));
 				}

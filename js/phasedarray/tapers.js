@@ -12,12 +12,12 @@ export class Uniform{
 	static controls = {};
 	calculate_weights(x){ return ones(x.length); }
 	normalize_from_geometry(x, dx){ return normalize(x); }
-	normalize_from_radial_geometry(r, dx, dy){
-		const maxR = Math.max(...r);
-		return Float32Array.from(r, (v) => v/maxR * 0.5);
+	normalize_from_radial_geometry(geo){
+		const maxR = Math.max(...geo.r);
+		return Float32Array.from(geo.r, (v) => v/maxR * 0.5);
 	}
 	calculate_from_geometry(x, dx){ return this.calculate_weights(this.normalize_from_geometry(x, dx)); }
-	calculate_from_radial_geometry(r, dx, dy){ return this.calculate_weights(this.normalize_from_radial_geometry(r, dx, dy)); }
+	calculate_from_radial_geometry(geo){ return this.calculate_weights(this.normalize_from_radial_geometry(geo)); }
 }
 
 export class TrianglePedestal extends Uniform{
@@ -76,7 +76,11 @@ export class TaylorNBar extends Uniform{
 		const den = (maxX - minX);
 		return Float32Array.from(x, (xi) => (xi - minX)/den - 0.5);
 	}
-	normalize_from_radial_geometry(x, y, dx, dy){
+	normalize_from_radial_geometry(geo){
+		const x = geo.x;
+		const y = geo.y;
+		const dx = geo.dx;
+		const dy = geo.dy;
 		const maxX = Math.max(...x);
 		const minX = Math.min(...x);
 		const maxY = Math.max(...y);

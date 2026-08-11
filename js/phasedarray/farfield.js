@@ -4,13 +4,16 @@ import {linspace} from "../util.js";
  * @typedef {FarfieldSpherical | FarfieldUV | FarfieldLudwig3} FarfieldHint
  */
 
+const CON_FREQ = {"title": "Frequency Scale", "type": "float", "default": 1.0, "min": 0.0, "step": 0.01};
+
 export class FarfieldABC{
-	static args = ['farfield-ax1-points', 'farfield-ax2-points'];
+	static args = ['farfield-ax1-points', 'farfield-ax2-points', 'farfield-frequency'];
 	static controls = {
 		'farfield-ax1-points': {'title': "Theta Points", 'type': "int", 'default': 257, 'min': 1},
-		'farfield-ax2-points': {'title': "Phi Points", 'type': "int", 'default': 257, 'min': 1}
+		'farfield-ax2-points': {'title': "Phi Points", 'type': "int", 'default': 257, 'min': 1},
+		'farfield-frequency': CON_FREQ,
 	};
-	constructor(ax1Points, ax2Points){
+	constructor(ax1Points, ax2Points, frequencyScale){
 		ax1Points = Number(ax1Points)
 		ax2Points = Number(ax2Points)
 		// ensure samples are odd
@@ -21,12 +24,15 @@ export class FarfieldABC{
 		this.farfield_log = new Array(ax2Points);
 		this.maxValue = -Infinity;
 		this.dirMax = null;
+		this.idealDirectivity = null;
 
+		this.frequency_scale = 1.0;
 		for (let i = 0; i < ax2Points; i++){
 			this.farfield_total[i] = new Float32Array(ax1Points);
 			this.farfield_log[i] = new Float32Array(ax1Points);
 		}
 		this.meshPoints = [ax1Points, ax2Points];
+		this.frequencyScale = frequencyScale;
 	}
 	get domain(){ return this.constructor.domain; };
 	_yield(text){
@@ -81,6 +87,7 @@ export class FarfieldABC{
 	create_parameters(pa){
 		let ac = 0;
 		const maxProgress = pa.geometry.x.length + 4;
+		let [pha, mag] = pa.create_farfield_vectors(this.frequencyScale)
 		return {
 			yield: (text) => {
 				ac++;
@@ -92,8 +99,8 @@ export class FarfieldABC{
 			},
 			x: pa.geometry.x,
 			y: pa.geometry.y,
-			pha: pa.vFarfieldPhase,
-			mag: pa.vFarfieldMag,
+			pha: pha,
+			mag: mag,
 		}
 	}
 	cut(xc, xs, ys, axis){
@@ -117,8 +124,8 @@ export class FarfieldABC{
 export class FarfieldSpherical extends FarfieldABC{
 	static title = 'Spherical';
 	static domain = 'spherical';
-	constructor(thetaPoints, phiPoints){
-		super(thetaPoints, phiPoints);
+	constructor(thetaPoints, phiPoints, frequencyScale){
+		super(thetaPoints, phiPoints, frequencyScale);
 		[thetaPoints, phiPoints] = this.meshPoints;
 		this.thetaPoints = thetaPoints;
 		this.phiPoints = phiPoints;
@@ -128,11 +135,14 @@ export class FarfieldSpherical extends FarfieldABC{
 	}
 	*calculator_loop(pa, skipLog){
 		const pars = this.create_parameters(pa);
+		const p = 2 * Math.PI;
+		const sc = p * this.frequencyScale;
 		yield pars.yield('Resetting spherical...');
 		this.reset_parameters();
-		let sinThetaPi = Float32Array.from({length: this.thetaPoints}, (_, i) => 2*Math.PI*Math.sin(this.theta[i]));
+		let sinThetaPi = Float32Array.from(this.theta, (t) => sc * Math.sin(t));
 		yield pars.yield('Clearing spherical...');
 		this.clear_parameters();
+		this.idealDirectivity = 4 * Math.PI * pa.geometry.area * this.frequencyScale ** 2;
 		for (let i = 0; i < pars.x.length; i++){
 			yield pars.yield('Calculating spherical re/im...');
 			for (let ip = 0; ip < this.phiPoints; ip++){
@@ -164,7 +174,7 @@ export class FarfieldSpherical extends FarfieldABC{
 				bsa += this.farfield_total[ip][it]*st;
 			}
 		}
-		return 4*Math.PI*this.maxValue/bsa;
+		return 4 * Math.PI * this.maxValue / bsa;
 	}
 	constant_phi(phi){
 		const y = this.cut(Number(phi)*Math.PI/180, this.phi, this.farfield_log, 0);
@@ -187,9 +197,10 @@ export class FarfieldUV extends FarfieldABC{
 		'farfield-ax1-points': {'title': "U Points", 'type': "int", 'default': 257, 'min': 1},
 		'farfield-ax2-points': {'title': "V Points", 'type': "int", 'default': 257, 'min': 1},
 		'farfield-uv-bound': {'title': "U/V Bound", 'type': "float", 'default': 1, 'min': 0.1, 'step': 0.1},
+		'farfield-frequency': CON_FREQ,
 	};
-	constructor(uPoints, vPoints, uMax, vMax){
-		super(uPoints, vPoints);
+	constructor(uPoints, vPoints, frequencyScale, uMax, vMax){
+		super(uPoints, vPoints, frequencyScale);
 		[uPoints, vPoints] = this.meshPoints;
 		if (uMax === undefined) uMax = 1;
 		if (vMax === undefined) vMax = uMax;
@@ -229,6 +240,7 @@ export class FarfieldUV extends FarfieldABC{
 			yield n['value'];
 		}
 		this.dirMax = sph.dirMax;
+		this.idealDirectivity = sph.idealDirectivity;
 		yield pars.yield('Calculating UV log...');
 		this.calculate_log();
 	}
@@ -251,10 +263,11 @@ export class FarfieldLudwig3 extends FarfieldABC{
 	static controls = {
 		'farfield-domain': {'title': null},
 		'farfield-ax1-points': {'title': "Az Points", 'type': "int", 'default': 257, 'min': 1},
-		'farfield-ax2-points': {'title': "El Points", 'type': "int", 'default': 257, 'min': 1}
+		'farfield-ax2-points': {'title': "El Points", 'type': "int", 'default': 257, 'min': 1},
+		'farfield-frequency': CON_FREQ,
 	};
-	constructor(azPoints, elPoints, azMax, elMax){
-		super(azPoints, elPoints);
+	constructor(azPoints, elPoints, frequencyScale, azMax, elMax){
+		super(azPoints, elPoints, frequencyScale);
 		[azPoints, elPoints] = this.meshPoints;
 		if (azMax === undefined) azMax = 90;
 		if (elMax === undefined) elMax = 90;
@@ -294,6 +307,7 @@ export class FarfieldLudwig3 extends FarfieldABC{
 			yield n['value'];
 		}
 		this.dirMax = sph.dirMax;
+		this.idealDirectivity = sph.idealDirectivity;
 		yield pars.yield('Calculating Ludwig3 log...');
 		this.calculate_log();
 	}
