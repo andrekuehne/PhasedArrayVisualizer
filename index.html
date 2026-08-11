@@ -18,6 +18,7 @@
 	<script type="module" src="./js/index.js" defer></script>
 
 	<!-- Matomo -->
+	<!--
 	<script>
 		var _paq = window._paq = window._paq || [];
 		/* tracker methods like "setCustomDimension" should be called before "trackPageView" */
@@ -31,6 +32,7 @@
 			g.async=true; g.src=u+'matomo.js'; s.parentNode.insertBefore(g,s);
 		})();
 	</script>
+	-->
 	<!-- End Matomo Code -->
 </head>
 <body class="auto">
@@ -91,7 +93,7 @@
 				</div>
 			</div>
 			<div id="pa-illumination-controls">
-				<h3>Illumination</h3>
+				<h3>Illumination Wave</h3>
 			</div>
 		</div>
 		<div class="pa-update-div">
@@ -121,6 +123,10 @@
 					<div>
 						<label for="pa-farfield-2d-scale">Scale</label>
 						<input type="number" max="200" min="5" value="40" id="pa-farfield-2d-scale" name="pa-farfield-2d-scale">
+					</div>
+					<div>
+						<label for="pa-farfield-frequency">Frequency Scale</label>
+						<input type="number" max="200" min="0" value="1" id="pa-farfield-frequency" name="pa-farfield-frequency" step="0.1">
 					</div>
 					<div>
 						<label for="pa-farfield-2d-colormap">Colormap</label>

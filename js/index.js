@@ -37,16 +37,17 @@ export class PhasedArrayScene extends SceneParent{
 		this.plot1D.install_scale_control('farfield-1d-scale');
 		this.plotFF.install_scale_control('farfield-2d-scale');
 		this.farfieldControl.add_max_monitor('directivity', (v) => {
-			let idir = 4 * Math.PI * this.arrayControl.pa.geometry.area;
+			let idir = this.farfieldControl.ff.idealDirectivity;
 			this.find_element('directivity-max').innerHTML = `Directivity: ${(10*Math.log10(v)).toFixed(1)} dB`
 			this.find_element('calc-directivity').innerHTML = `${(10*Math.log10(v)).toFixed(1)} dB`
 			this.find_element('aperture-efficiency').innerHTML = `${((v / idir) * 100).toFixed(1)} % (${(10 * Math.log10(v / idir)).toFixed(1)} dB)`
 		});
+		this.farfieldControl.add_max_monitor('ideal-directivity', (v) => {
+			this.find_element('ideal-directivity').innerHTML = `${(10 * Math.log10(v)).toFixed(1)} dB`
+		});
 
 		this.arrayControl.addEventListener("phased-array-calculation-changed", () => {
-			let idir = 4 * Math.PI * this.arrayControl.pa.geometry.area;
-			this.find_element('ideal-directivity').innerHTML = `${(10 * Math.log10(idir)).toFixed(1)} dB`
-			this.find_element('calc-area').innerHTML = `${this.arrayControl.pa.geometry.area.toFixed(1)} λ<sup>2</sup>`
+			this.find_element('calc-area').innerHTML = `${this.arrayControl.pa.geometry.area.toFixed(1)} λ<sub>0</sub><sup>2</sup>`
 			this.find_element('element-count').innerHTML = `${this.arrayControl.pa.geometry.length}`
 		});
 		this.find_element('refresh').addEventListener('click', () => {

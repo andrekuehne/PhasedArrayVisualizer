@@ -1,5 +1,5 @@
 import {ones, normalize, zeros} from "../util.js";
-import { IlluminationPlaneWave } from "./illumination.js"
+import { IlluminationTypicalPlaneWave } from "./illumination.js"
 /** @import { GeometryHint } from "./geometry.js" */
 /** @import { IlluminationHint } from "./illumination.js" */
 
@@ -34,7 +34,6 @@ export class PhasedArray{
 		this.vQuantizeMag = new Float32Array(this.size);
 
 		// vector ready for farfield calculation.
-		this.vFarfieldPhase = new Float32Array(this.size);
 		this.vFarfieldMag = new Float32Array(this.size);
 
 		// vector overrides.
@@ -74,7 +73,7 @@ export class PhasedArray{
 		const vmag = new Float32Array(this.size);
 		const vpha = new Float32Array(this.size);
 		const omag = this.vTaperMag;
-		const opha = this.vSteerPhaseFactor;
+		const opha = this.vIdealPhaseFactor;
 
 		for (let i = 0; i < this.geometry.length; i++){
 			let m = omag[i];
@@ -94,7 +93,7 @@ export class PhasedArray{
 		this.illum = illum;
 	}
 	compute_illumination(){
-		if (this.illum === null) this.illum = new IlluminationPlaneWave();
+		if (this.illum === null) this.illum = new IlluminationTypicalPlaneWave();
 		this.illum.compute_illumination(this);
 	}
 	compute_phase(){
@@ -105,7 +104,6 @@ export class PhasedArray{
 		const y = this.geometry.y;
 		const cx = this.geometry.x_center;
 		const cy = this.geometry.y_center;
-		const p = -2 * Math.PI;
 		for (let i = 0; i < this.geometry.length; i++){
 			let s = (x[i] + cx) * xf + (y[i] + cy) * yf;
 			this.vSteerPhaseFactor[i] = s;
@@ -169,7 +167,6 @@ export class PhasedArray{
 	}
 	quantize_phase(bits, dither){
 		let lsb = 0;
-		const f = 2 * Math.PI;
 		if (dither === undefined) dither = false;
 		if (bits > 0) lsb = 1/2**bits;
 
@@ -181,7 +178,6 @@ export class PhasedArray{
 				while (p < 0) p += 1;
 				this.vQuantizePhaseFactor[i] = lsb * Math.round(p / lsb);
 			}
-			this.vFarfieldPhase[i] = -f * ((this.vQuantizePhaseFactor[i] + this.vIllumPhaseFactor[i]) % 1.0);
 		}
 	}
 	quantize_attenuation(bits, lsb){
@@ -198,5 +194,14 @@ export class PhasedArray{
 			}
 			this.vFarfieldMag[i] = this.vQuantizeMag[i] * this.vIllumMag[i];
 		}
+	}
+	create_farfield_vectors(freq_scale){
+		const pha = new Float32Array(this.size);
+		const mag = new Float32Array(this.size);
+		const f = 2 * Math.PI;
+		for (let i = 0; i < this.size; i++){
+			pha[i] = -f * ((this.vQuantizePhaseFactor[i] + this.vIllumPhaseFactor[i] * freq_scale) % 1.0);
+		}
+		return [pha, this.vFarfieldMag];
 	}
 }
