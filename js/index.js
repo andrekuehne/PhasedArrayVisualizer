@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 /**
  * @param {Record<string, number|boolean>|null} m
- * @param {'ax1'|'ax2'} axis
+ * @param {'ax1'|'ax2'|'large'|'small'} axis
  * @param {boolean} isUv
  */
 function formatHpbw(m, axis, isUv){
@@ -130,6 +130,8 @@ export class PhasedArrayScene extends SceneParent{
 		const isUv = ff != null && ff.domain === 'uv';
 		this.find_element('hpbw-ax1').textContent = formatHpbw(m, 'ax1', isUv);
 		this.find_element('hpbw-ax2').textContent = formatHpbw(m, 'ax2', isUv);
+		this.find_element('hpbw-large').textContent = formatHpbw(m, 'large', isUv);
+		this.find_element('hpbw-small').textContent = formatHpbw(m, 'small', isUv);
 		this.find_element('nearest-sll').textContent = formatSll(m && m.nearest_sll_db);
 		this.find_element('largest-sll').textContent = formatSll(m && m.largest_sll_db);
 	}

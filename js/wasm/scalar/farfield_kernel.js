@@ -141,6 +141,62 @@ export class PatternMetrics {
     /**
      * @returns {number}
      */
+    get hpbw_large_angle_deg() {
+        const ret = wasm.__wbg_get_patternmetrics_hpbw_large_angle_deg(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {boolean}
+     */
+    get hpbw_large_clipped() {
+        const ret = wasm.__wbg_get_patternmetrics_hpbw_large_clipped(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get hpbw_large_deg() {
+        const ret = wasm.__wbg_get_patternmetrics_hpbw_large_deg(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get hpbw_large() {
+        const ret = wasm.__wbg_get_patternmetrics_hpbw_large(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get hpbw_small_angle_deg() {
+        const ret = wasm.__wbg_get_patternmetrics_hpbw_small_angle_deg(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {boolean}
+     */
+    get hpbw_small_clipped() {
+        const ret = wasm.__wbg_get_patternmetrics_hpbw_small_clipped(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get hpbw_small_deg() {
+        const ret = wasm.__wbg_get_patternmetrics_hpbw_small_deg(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get hpbw_small() {
+        const ret = wasm.__wbg_get_patternmetrics_hpbw_small(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
     get largest_sll_ax1() {
         const ret = wasm.__wbg_get_patternmetrics_largest_sll_ax1(this.__wbg_ptr);
         return ret;
@@ -243,6 +299,54 @@ export class PatternMetrics {
      */
     set hpbw_ax2(arg0) {
         wasm.__wbg_set_patternmetrics_hpbw_ax2(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set hpbw_large_angle_deg(arg0) {
+        wasm.__wbg_set_patternmetrics_hpbw_large_angle_deg(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {boolean} arg0
+     */
+    set hpbw_large_clipped(arg0) {
+        wasm.__wbg_set_patternmetrics_hpbw_large_clipped(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set hpbw_large_deg(arg0) {
+        wasm.__wbg_set_patternmetrics_hpbw_large_deg(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set hpbw_large(arg0) {
+        wasm.__wbg_set_patternmetrics_hpbw_large(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set hpbw_small_angle_deg(arg0) {
+        wasm.__wbg_set_patternmetrics_hpbw_small_angle_deg(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {boolean} arg0
+     */
+    set hpbw_small_clipped(arg0) {
+        wasm.__wbg_set_patternmetrics_hpbw_small_clipped(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set hpbw_small_deg(arg0) {
+        wasm.__wbg_set_patternmetrics_hpbw_small_deg(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set hpbw_small(arg0) {
+        wasm.__wbg_set_patternmetrics_hpbw_small(this.__wbg_ptr, arg0);
     }
     /**
      * @param {number} arg0

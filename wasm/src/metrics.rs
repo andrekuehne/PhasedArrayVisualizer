@@ -8,6 +8,57 @@ struct Vec3 {
 	z: f32,
 }
 
+impl Vec3 {
+	fn dot(self, o: Vec3) -> f32 {
+		self.x * o.x + self.y * o.y + self.z * o.z
+	}
+
+	fn cross(self, o: Vec3) -> Vec3 {
+		Vec3 {
+			x: self.y * o.z - self.z * o.y,
+			y: self.z * o.x - self.x * o.z,
+			z: self.x * o.y - self.y * o.x,
+		}
+	}
+
+	fn add(self, o: Vec3) -> Vec3 {
+		Vec3 {
+			x: self.x + o.x,
+			y: self.y + o.y,
+			z: self.z + o.z,
+		}
+	}
+
+	fn sub(self, o: Vec3) -> Vec3 {
+		Vec3 {
+			x: self.x - o.x,
+			y: self.y - o.y,
+			z: self.z - o.z,
+		}
+	}
+
+	fn scale(self, s: f32) -> Vec3 {
+		Vec3 {
+			x: self.x * s,
+			y: self.y * s,
+			z: self.z * s,
+		}
+	}
+
+	fn norm(self) -> f32 {
+		self.dot(self).sqrt()
+	}
+
+	fn normalized(self) -> Option<Vec3> {
+		let n = self.norm();
+		if n < 1e-20 {
+			None
+		} else {
+			Some(self.scale(1.0 / n))
+		}
+	}
+}
+
 /// Pattern-feature metrics extracted from a computed intensity map.
 #[wasm_bindgen]
 pub struct PatternMetrics {
@@ -21,6 +72,14 @@ pub struct PatternMetrics {
 	pub hpbw_ax2_deg: f32,
 	pub hpbw_ax1_clipped: bool,
 	pub hpbw_ax2_clipped: bool,
+	pub hpbw_large: f32,
+	pub hpbw_small: f32,
+	pub hpbw_large_deg: f32,
+	pub hpbw_small_deg: f32,
+	pub hpbw_large_clipped: bool,
+	pub hpbw_small_clipped: bool,
+	pub hpbw_large_angle_deg: f32,
+	pub hpbw_small_angle_deg: f32,
 	pub nearest_sll_db: f32,
 	pub largest_sll_db: f32,
 	pub nearest_sll_ax1: f32,
@@ -41,6 +100,14 @@ fn nan_metrics() -> PatternMetrics {
 		hpbw_ax2_deg: f32::NAN,
 		hpbw_ax1_clipped: true,
 		hpbw_ax2_clipped: true,
+		hpbw_large: f32::NAN,
+		hpbw_small: f32::NAN,
+		hpbw_large_deg: f32::NAN,
+		hpbw_small_deg: f32::NAN,
+		hpbw_large_clipped: true,
+		hpbw_small_clipped: true,
+		hpbw_large_angle_deg: f32::NAN,
+		hpbw_small_angle_deg: f32::NAN,
 		nearest_sll_db: f32::NAN,
 		largest_sll_db: f32::NAN,
 		nearest_sll_ax1: f32::NAN,
@@ -86,13 +153,57 @@ fn look(domain: u32, a1: f32, a2: f32) -> Option<Vec3> {
 	}
 }
 
+fn adjust_theta_phi(mut theta: f32, mut phi: f32) -> (f32, f32) {
+	const HALF: f32 = std::f32::consts::FRAC_PI_2;
+	const FULL: f32 = std::f32::consts::PI;
+	if phi > HALF {
+		phi -= FULL;
+		theta = -theta;
+	}
+	if phi < -HALF {
+		phi += FULL;
+		theta = -theta;
+	}
+	(theta, phi)
+}
+
+fn from_look(domain: u32, r: Vec3) -> Option<(f32, f32)> {
+	let n = r.norm();
+	if n < 1e-20 {
+		return None;
+	}
+	let x = r.x / n;
+	let y = r.y / n;
+	let z = r.z / n;
+	match domain {
+		DOMAIN_SPHERICAL => {
+			let theta = z.clamp(-1.0, 1.0).acos();
+			let phi = y.atan2(x);
+			Some(adjust_theta_phi(theta, phi))
+		}
+		DOMAIN_UV => {
+			let r2 = x * x + y * y;
+			if z < 0.0 || r2 >= 1.0 {
+				None
+			} else {
+				Some((x, y))
+			}
+		}
+		DOMAIN_LUDWIG3 => Some((x.atan2(z), y.clamp(-1.0, 1.0).asin())),
+		_ => None,
+	}
+}
+
 fn sample_valid(domain: u32, ax1: &[f32], ax2: &[f32], i1: usize, i2: usize) -> bool {
 	look(domain, ax1[i1], ax2[i2]).is_some()
 }
 
+fn angle_rad(a: Vec3, b: Vec3) -> f32 {
+	a.dot(b).clamp(-1.0, 1.0).acos()
+}
+
 fn angle_deg(a: Vec3, b: Vec3) -> f32 {
-	let d = (a.x * b.x + a.y * b.y + a.z * b.z).clamp(-1.0, 1.0);
-	d.acos().to_degrees()
+	angle_rad(a, b).to_degrees()
 }
 
 fn lerp_look(a: Vec3, b: Vec3, t: f32) -> Option<Vec3> {
@@ -602,6 +713,269 @@ fn is_local_max(
 	true
 }
 
+const HPBW_SWEEP_N: usize = 36;
+
+fn geodesic_point(r0: Vec3, d: Vec3, psi: f32) -> Option<Vec3> {
+	let (s, c) = psi.sin_cos();
+	r0.scale(c).add(d.scale(s)).normalized()
+}
+
+fn axis_frac(ax: &[f32], val: f32) -> Option<(usize, f32)> {
+	let n = ax.len();
+	if n < 2 {
+		return None;
+	}
+	let lo = ax[0];
+	let hi = ax[n - 1];
+	let span = hi - lo;
+	if span.abs() < 1e-20 {
+		return None;
+	}
+	let mut v = val;
+	let tol = span.abs() * 1e-4 + 1e-6;
+	if span > 0.0 {
+		if v < lo - tol || v > hi + tol {
+			return None;
+		}
+		v = v.clamp(lo, hi);
+	} else {
+		if v > lo + tol || v < hi - tol {
+			return None;
+		}
+		v = v.clamp(hi, lo);
+	}
+	let f = (v - lo) / span * (n as f32 - 1.0);
+	let i = (f.floor() as usize).min(n - 2);
+	let t = (f - i as f32).clamp(0.0, 1.0);
+	Some((i, t))
+}
+
+fn bilinear_intensity(
+	domain: u32,
+	ax1: &[f32],
+	ax2: &[f32],
+	total: &[f32],
+	a1: f32,
+	a2: f32,
+) -> Option<f32> {
+	if look(domain, a1, a2).is_none() {
+		return None;
+	}
+	let (i, t1) = axis_frac(ax1, a1)?;
+	let (j, t2) = axis_frac(ax2, a2)?;
+	let n1 = ax1.len();
+	let y00 = total[idx(i, j, n1)];
+	let y10 = total[idx(i + 1, j, n1)];
+	let y01 = total[idx(i, j + 1, n1)];
+	let y11 = total[idx(i + 1, j + 1, n1)];
+	let y0 = y00 + t1 * (y10 - y00);
+	let y1 = y01 + t1 * (y11 - y01);
+	Some(y0 + t2 * (y1 - y0))
+}
+
+fn tangent_basis(
+	domain: u32,
+	ax1: &[f32],
+	_ax2: &[f32],
+	a1: f32,
+	a2: f32,
+) -> Option<(Vec3, Vec3, Vec3)> {
+	let r0 = look(domain, a1, a2)?;
+	let n1 = ax1.len();
+	let da = if n1 > 1 {
+		(ax1[n1 - 1] - ax1[0]) / (n1 as f32 - 1.0)
+	} else {
+		1e-3
+	};
+	let da = if da.abs() < 1e-8 {
+		1e-3f32.copysign(if da == 0.0 { 1.0 } else { da })
+	} else {
+		da
+	};
+	let (r1, sign) = if let Some(r) = look(domain, a1 + da, a2) {
+		(r, 1.0f32)
+	} else {
+		(look(domain, a1 - da, a2)?, -1.0f32)
+	};
+	let mut e1 = r1.sub(r0).scale(sign);
+	e1 = e1.sub(r0.scale(e1.dot(r0)));
+	let e1 = e1.normalized()?;
+	let e2 = r0.cross(e1).normalized()?;
+	Some((r0, e1, e2))
+}
+
+fn local_psi_step(
+	domain: u32,
+	ax1: &[f32],
+	ax2: &[f32],
+	i1: usize,
+	i2: usize,
+	r0: Vec3,
+) -> f32 {
+	let n1 = ax1.len();
+	let n2 = ax2.len();
+	let mut best = f32::INFINITY;
+	if i1 + 1 < n1 {
+		if let Some(r) = look(domain, ax1[i1 + 1], ax2[i2]) {
+			best = best.min(angle_rad(r0, r));
+		}
+	}
+	if i1 > 0 {
+		if let Some(r) = look(domain, ax1[i1 - 1], ax2[i2]) {
+			best = best.min(angle_rad(r0, r));
+		}
+	}
+	if i2 + 1 < n2 {
+		if let Some(r) = look(domain, ax1[i1], ax2[i2 + 1]) {
+			best = best.min(angle_rad(r0, r));
+		}
+	}
+	if i2 > 0 {
+		if let Some(r) = look(domain, ax1[i1], ax2[i2 - 1]) {
+			best = best.min(angle_rad(r0, r));
+		}
+	}
+	(0.5 * best).clamp(1e-4, 0.05)
+}
+
+struct GeodesicCross {
+	psi: f32,
+	a1: f32,
+	a2: f32,
+}
+
+fn walk_geodesic(
+	domain: u32,
+	ax1: &[f32],
+	ax2: &[f32],
+	total: &[f32],
+	r0: Vec3,
+	d: Vec3,
+	half: f32,
+	y0: f32,
+	dpsi: f32,
+) -> Option<GeodesicCross> {
+	let psi_max = std::f32::consts::PI;
+	let mut psi = 0.0f32;
+	let mut y = y0;
+	let max_steps = ((psi_max / dpsi).ceil() as usize + 2).min(4096);
+	for _ in 0..max_steps {
+		let psi2 = psi + dpsi;
+		if psi2 > psi_max {
+			return None;
+		}
+		let r2 = geodesic_point(r0, d, psi2)?;
+		let (a1, a2) = from_look(domain, r2)?;
+		let y2 = bilinear_intensity(domain, ax1, ax2, total, a1, a2)?;
+		if y2 < half {
+			let psi_x = interp_cross(psi, y, psi2, y2, half);
+			let r_x = geodesic_point(r0, d, psi_x)?;
+			let (a1_x, a2_x) = from_look(domain, r_x)?;
+			return Some(GeodesicCross {
+				psi: psi_x,
+				a1: a1_x,
+				a2: a2_x,
+			});
+		}
+		psi = psi2;
+		y = y2;
+	}
+	None
+}
+
+struct ExtremaHpbw {
+	large: f32,
+	small: f32,
+	large_deg: f32,
+	small_deg: f32,
+	large_angle_deg: f32,
+	small_angle_deg: f32,
+	clipped: bool,
+}
+
+fn clipped_extrema() -> ExtremaHpbw {
+	ExtremaHpbw {
+		large: f32::NAN,
+		small: f32::NAN,
+		large_deg: f32::NAN,
+		small_deg: f32::NAN,
+		large_angle_deg: f32::NAN,
+		small_angle_deg: f32::NAN,
+		clipped: true,
+	}
+}
+
+fn hpbw_large_small(
+	domain: u32,
+	ax1: &[f32],
+	ax2: &[f32],
+	total: &[f32],
+	i1_peak: usize,
+	i2_peak: usize,
+	peak_ax1: f32,
+	peak_ax2: f32,
+	half: f32,
+) -> ExtremaHpbw {
+	let Some((r0, e1, e2)) = tangent_basis(domain, ax1, ax2, peak_ax1, peak_ax2) else {
+		return clipped_extrema();
+	};
+	let y0 = total[idx(i1_peak, i2_peak, ax1.len())];
+	let dpsi = local_psi_step(domain, ax1, ax2, i1_peak, i2_peak, r0);
+	let mut large_deg = f32::NEG_INFINITY;
+	let mut small_deg = f32::INFINITY;
+	let mut large = f32::NAN;
+	let mut small = f32::NAN;
+	let mut large_angle = f32::NAN;
+	let mut small_angle = f32::NAN;
+	let mut found = false;
+
+	for k in 0..HPBW_SWEEP_N {
+		let alpha = k as f32 * std::f32::consts::PI / HPBW_SWEEP_N as f32;
+		let (s, c) = alpha.sin_cos();
+		let d = e1.scale(c).add(e2.scale(s));
+		let Some(left) = walk_geodesic(domain, ax1, ax2, total, r0, d.scale(-1.0), half, y0, dpsi)
+		else {
+			continue;
+		};
+		let Some(right) = walk_geodesic(domain, ax1, ax2, total, r0, d, half, y0, dpsi) else {
+			continue;
+		};
+		let deg = (left.psi + right.psi).to_degrees();
+		let native = if domain == DOMAIN_UV {
+			let du = right.a1 - left.a1;
+			let dv = right.a2 - left.a2;
+			(du * du + dv * dv).sqrt()
+		} else {
+			f32::NAN
+		};
+		let angle_deg = alpha.to_degrees();
+		if !found || deg > large_deg {
+			large_deg = deg;
+			large = native;
+			large_angle = angle_deg;
+		}
+		if !found || deg < small_deg {
+			small_deg = deg;
+			small = native;
+			small_angle = angle_deg;
+		}
+		found = true;
+	}
+
+	if !found {
+		return clipped_extrema();
+	}
+	ExtremaHpbw {
+		large,
+		small,
+		large_deg,
+		small_deg,
+		large_angle_deg: large_angle,
+		small_angle_deg: small_angle,
+		clipped: false,
+	}
+}
+
 /// Extract HPBW and sidelobe metrics from a computed far-field intensity map.
 ///
 /// `total` is row-major with `index = i2 * n1 + i1` (ax2 outer), matching
@@ -668,6 +1042,18 @@ pub fn compute_pattern_metrics(
 			half,
 		)
 	};
+
+	let extrema = hpbw_large_small(
+		domain,
+		ax1,
+		ax2,
+		total,
+		i1_peak,
+		i2_peak,
+		peak_ax1,
+		peak_ax2,
+		half,
+	);
 
 	let in_beam = flood_main_beam(
 		domain, ax1, ax2, total, n1, n2, i1_peak, i2_peak, half,
@@ -768,6 +1154,14 @@ pub fn compute_pattern_metrics(
 		hpbw_ax2_deg: cut_ax2.deg,
 		hpbw_ax1_clipped: cut_ax1.clipped,
 		hpbw_ax2_clipped: cut_ax2.clipped,
+		hpbw_large: extrema.large,
+		hpbw_small: extrema.small,
+		hpbw_large_deg: extrema.large_deg,
+		hpbw_small_deg: extrema.small_deg,
+		hpbw_large_clipped: extrema.clipped,
+		hpbw_small_clipped: extrema.clipped,
+		hpbw_large_angle_deg: extrema.large_angle_deg,
+		hpbw_small_angle_deg: extrema.small_angle_deg,
 		nearest_sll_db,
 		largest_sll_db,
 		nearest_sll_ax1,
@@ -851,6 +1245,9 @@ mod tests {
 		let want_deg = want.to_degrees();
 		assert!((m.hpbw_ax1_deg - want_deg).abs() / want_deg < 0.08);
 		assert!((m.hpbw_ax2_deg - want_deg).abs() / want_deg < 0.08);
+		assert!(!m.hpbw_large_clipped && !m.hpbw_small_clipped);
+		assert!((m.hpbw_large_deg - want_deg).abs() / want_deg < 0.08);
+		assert!((m.hpbw_small_deg - want_deg).abs() / want_deg < 0.08);
 		assert!(m.peak_ax1.abs() < 1e-5 && m.peak_ax2.abs() < 1e-5);
 	}
 
@@ -867,6 +1264,12 @@ mod tests {
 		assert!(!m.hpbw_ax1_clipped && !m.hpbw_ax2_clipped);
 		assert!((m.hpbw_ax1 - want).abs() / want < 0.05);
 		assert!((m.hpbw_ax2 - want).abs() / want < 0.05);
+		assert!(!m.hpbw_large_clipped && !m.hpbw_small_clipped);
+		let want_deg = want.to_degrees();
+		assert!((m.hpbw_large_deg - want_deg).abs() / want_deg < 0.08);
+		assert!((m.hpbw_small_deg - want_deg).abs() / want_deg < 0.08);
+		assert!((m.hpbw_large - want).abs() / want < 0.08);
+		assert!((m.hpbw_small - want).abs() / want < 0.08);
 	}
 
 	#[test]
@@ -930,6 +1333,19 @@ mod tests {
 			m.hpbw_ax2,
 			want
 		);
+		assert!(!m.hpbw_large_clipped && !m.hpbw_small_clipped);
+		assert!(
+			(m.hpbw_large_deg - m.hpbw_ax1_deg).abs() / m.hpbw_ax1_deg < 0.12,
+			"large {} vs ax1 {}",
+			m.hpbw_large_deg,
+			m.hpbw_ax1_deg
+		);
+		assert!(
+			(m.hpbw_small_deg - m.hpbw_ax1_deg).abs() / m.hpbw_ax1_deg < 0.12,
+			"small {} vs ax1 {}",
+			m.hpbw_small_deg,
+			m.hpbw_ax1_deg
+		);
 	}
 
 	fn fill_spherical_cap(total: &mut [f32], ax1: &[f32], ax2: &[f32], th0: f32, ph0: f32, sigma: f32) {
@@ -972,6 +1388,14 @@ mod tests {
 			edge.hpbw_ax2_deg,
 			mid.hpbw_ax2_deg
 		);
+		assert!(!edge.hpbw_large_clipped && !edge.hpbw_small_clipped);
+		assert!(!mid.hpbw_large_clipped && !mid.hpbw_small_clipped);
+		assert!(
+			(mid.hpbw_large_deg - mid.hpbw_small_deg).abs() / mid.hpbw_large_deg < 0.12,
+			"circular cap large {} vs small {}",
+			mid.hpbw_large_deg,
+			mid.hpbw_small_deg
+		);
 	}
 
 	#[test]
@@ -1008,6 +1432,8 @@ mod tests {
 		assert!(m.hpbw_ax1_clipped && m.hpbw_ax2_clipped);
 		assert!(m.hpbw_ax1.is_nan() && m.hpbw_ax2.is_nan());
 		assert!(m.hpbw_ax1_deg.is_nan() && m.hpbw_ax2_deg.is_nan());
+		assert!(m.hpbw_large_clipped && m.hpbw_small_clipped);
+		assert!(m.hpbw_large_deg.is_nan() && m.hpbw_small_deg.is_nan());
 		assert!(m.nearest_sll_db.is_nan());
 		assert!(m.largest_sll_db.is_nan());
 	}
@@ -1020,5 +1446,88 @@ mod tests {
 		let ax2 = [0.0f32];
 		let m = compute_pattern_metrics(DOMAIN_UV, &ax1, &ax2, &[1.0, 2.0]);
 		assert!(m.peak_ax1.is_nan());
+	}
+
+	fn abs_angle_diff_180(a: f32, b: f32) -> f32 {
+		let mut d = (a - b) % 180.0;
+		if d > 90.0 {
+			d -= 180.0;
+		}
+		if d < -90.0 {
+			d += 180.0;
+		}
+		d.abs()
+	}
+
+	fn add_rotated_gaussian(
+		total: &mut [f32],
+		ax1: &[f32],
+		ax2: &[f32],
+		sigma1: f32,
+		sigma2: f32,
+		rot: f32,
+	) {
+		let n1 = ax1.len();
+		let n2 = ax2.len();
+		let (s, c) = rot.sin_cos();
+		for i2 in 0..n2 {
+			for i1 in 0..n1 {
+				let d1 = ax1[i1];
+				let d2 = ax2[i2];
+				let p1 = c * d1 + s * d2;
+				let p2 = -s * d1 + c * d2;
+				total[i2 * n1 + i1] =
+					(-(p1 * p1 / (2.0 * sigma1 * sigma1) + p2 * p2 / (2.0 * sigma2 * sigma2))).exp();
+			}
+		}
+	}
+
+	#[test]
+	fn rotated_ellipse_large_small_hpbw_ludwig3() {
+		let n = 121;
+		let ax1 = linspace(-0.4, 0.4, n);
+		let ax2 = linspace(-0.4, 0.4, n);
+		let mut total = vec![0.0f32; n * n];
+		let sigma1 = 0.08;
+		let sigma2 = 0.03;
+		let rot = 30.0f32.to_radians();
+		add_rotated_gaussian(&mut total, &ax1, &ax2, sigma1, sigma2, rot);
+		let m = compute_pattern_metrics(DOMAIN_LUDWIG3, &ax1, &ax2, &total);
+		assert!(!m.hpbw_large_clipped && !m.hpbw_small_clipped);
+		assert!(!m.hpbw_ax1_clipped && !m.hpbw_ax2_clipped);
+		let want_large = expected_hpbw(sigma1).to_degrees();
+		let want_small = expected_hpbw(sigma2).to_degrees();
+		assert!(
+			(m.hpbw_large_deg - want_large).abs() / want_large < 0.08,
+			"large {} vs {}",
+			m.hpbw_large_deg,
+			want_large
+		);
+		assert!(
+			(m.hpbw_small_deg - want_small).abs() / want_small < 0.08,
+			"small {} vs {}",
+			m.hpbw_small_deg,
+			want_small
+		);
+		let ax_min = m.hpbw_ax1_deg.min(m.hpbw_ax2_deg);
+		let ax_max = m.hpbw_ax1_deg.max(m.hpbw_ax2_deg);
+		assert!(
+			ax_min > m.hpbw_small_deg * 0.9 && ax_max < m.hpbw_large_deg * 1.1,
+			"aligned ({}, {}) not between small {} and large {}",
+			m.hpbw_ax1_deg,
+			m.hpbw_ax2_deg,
+			m.hpbw_small_deg,
+			m.hpbw_large_deg
+		);
+		assert!(
+			abs_angle_diff_180(m.hpbw_large_angle_deg, 30.0) < 8.0,
+			"large angle {}",
+			m.hpbw_large_angle_deg
+		);
+		assert!(
+			abs_angle_diff_180(m.hpbw_small_angle_deg, 120.0) < 8.0,
+			"small angle {}",
+			m.hpbw_small_angle_deg
+		);
 	}
 }

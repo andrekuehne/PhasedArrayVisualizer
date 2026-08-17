@@ -20,6 +20,9 @@ const METRIC_KEYS = [
 	'peak_i1', 'peak_i2', 'peak_ax1', 'peak_ax2',
 	'hpbw_ax1', 'hpbw_ax2', 'hpbw_ax1_deg', 'hpbw_ax2_deg',
 	'hpbw_ax1_clipped', 'hpbw_ax2_clipped',
+	'hpbw_large', 'hpbw_small', 'hpbw_large_deg', 'hpbw_small_deg',
+	'hpbw_large_clipped', 'hpbw_small_clipped',
+	'hpbw_large_angle_deg', 'hpbw_small_angle_deg',
 	'nearest_sll_db', 'largest_sll_db',
 	'nearest_sll_ax1', 'nearest_sll_ax2',
 	'largest_sll_ax1', 'largest_sll_ax2',
@@ -134,8 +137,13 @@ describe('WASM pattern metrics', () => {
 		const want = expectedHpbw(0.05);
 		assert.equal(a.hpbw_ax1_clipped, false);
 		assert.equal(a.hpbw_ax2_clipped, false);
+		assert.equal(a.hpbw_large_clipped, false);
+		assert.equal(a.hpbw_small_clipped, false);
 		assert.ok(Math.abs(a.hpbw_ax1 - want) / want < 0.05, `hpbw_ax1 ${a.hpbw_ax1} vs ${want}`);
 		assert.ok(Math.abs(a.hpbw_ax2 - want) / want < 0.05, `hpbw_ax2 ${a.hpbw_ax2} vs ${want}`);
+		const wantDeg = want * 180 / Math.PI;
+		assert.ok(Math.abs(a.hpbw_large_deg - wantDeg) / wantDeg < 0.08);
+		assert.ok(Math.abs(a.hpbw_small_deg - wantDeg) / wantDeg < 0.08);
 	});
 
 	test('SIMD and scalar agree on two-Gaussian SLL', () => {
@@ -187,7 +195,10 @@ describe('WASM pattern metrics', () => {
 		assertMetricsEqual('clipped', a, b);
 		assert.equal(a.hpbw_ax1_clipped, true);
 		assert.equal(a.hpbw_ax2_clipped, true);
+		assert.equal(a.hpbw_large_clipped, true);
+		assert.equal(a.hpbw_small_clipped, true);
 		assert.ok(Number.isNaN(a.hpbw_ax1));
+		assert.ok(Number.isNaN(a.hpbw_large_deg));
 		assert.ok(Number.isNaN(a.nearest_sll_db));
 		assert.ok(Number.isNaN(a.largest_sll_db));
 	});
