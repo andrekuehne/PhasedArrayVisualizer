@@ -195,6 +195,19 @@ export class SceneControlTaper extends SceneControlWithSelectorAutoBuild{
 	static autoUpdateURL = false;
 	constructor(parent, key, htmlElement){
 		super(parent, 'taper', Tapers, htmlElement, key);
+		const sel = htmlElement.querySelector('select');
+		if (sel !== null && htmlElement.querySelector(`label[for='${sel.id}']`) === null){
+			const wrap = document.createElement('div');
+			wrap.className = 'form-group';
+			wrap.id = sel.id + '-div';
+			const lbl = document.createElement('label');
+			lbl.htmlFor = sel.id;
+			lbl.innerHTML = key.toUpperCase() + '-Taper';
+			htmlElement.insertBefore(wrap, sel);
+			wrap.appendChild(lbl);
+			wrap.appendChild(sel);
+			sel.style.width = '';
+		}
 		this._activeTaper = null;
 	}
 	control_changed(key){

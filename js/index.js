@@ -38,14 +38,21 @@ export class PhasedArrayScene extends SceneParent{
 		this.plotTaper.bind_phased_array_scene(this.arrayControl);
 		this.plot1D.install_scale_control('farfield-1d-scale');
 		this.plotFF.install_scale_control('farfield-2d-scale');
-		const update_eirp_displays = () => {
-			const ff = this.farfieldControl.ff;
+		const update_power_displays = () => {
 			const pa = this.arrayControl.pa;
 			const pwr = this.arrayControl.powerControl;
-			if (ff == null || ff.dirMax == null || pa == null) return;
-			const pTot = pa.totalPowerWatts(pwr.getWatts());
-			const eirp = ff.dirMax * pTot;
-			this.find_element('array-power').innerHTML = pwr.format(pTot, 1);
+			if (pa == null) return;
+			const pAnt = pwr.getWatts();
+			const pAvail = pa.availablePowerWatts(pAnt);
+			const pStim = pa.totalPowerWatts(pAnt);
+			this.find_element('available-power').innerHTML = pwr.formatEirp(pAvail, 1);
+			this.find_element('stimulated-power').innerHTML = pwr.formatEirp(pStim, 1);
+			const util = pAvail > 0 ? pStim / pAvail : 0;
+			const utilDb = util > 0 ? (10 * Math.log10(util)).toFixed(1) : '-Inf';
+			this.find_element('power-utilization').innerHTML = `${(util * 100).toFixed(1)} % (${utilDb} dB)`;
+			const ff = this.farfieldControl.ff;
+			if (ff == null || ff.dirMax == null) return;
+			const eirp = ff.dirMax * pStim;
 			this.find_element('peak-eirp').innerHTML = pwr.formatEirp(eirp, 1);
 			this.find_element('directivity-max').innerHTML =
 				`Directivity: ${(10*Math.log10(ff.dirMax)).toFixed(1)} dB, EIRP: ${pwr.formatEirp(eirp, 1)}`;
@@ -54,18 +61,19 @@ export class PhasedArrayScene extends SceneParent{
 			let idir = this.farfieldControl.ff.idealDirectivity;
 			this.find_element('calc-directivity').innerHTML = `${(10*Math.log10(v)).toFixed(1)} dB`
 			this.find_element('aperture-efficiency').innerHTML = `${((v / idir) * 100).toFixed(1)} % (${(10 * Math.log10(v / idir)).toFixed(1)} dB)`
-			update_eirp_displays();
+			update_power_displays();
 		});
 		this.farfieldControl.add_max_monitor('ideal-directivity', (v) => {
 			this.find_element('ideal-directivity').innerHTML = `${(10 * Math.log10(v)).toFixed(1)} dB`
 		});
 		this.arrayControl.powerControl.addEventListener('power-changed', () => {
-			update_eirp_displays();
+			update_power_displays();
 		});
 
 		this.arrayControl.addEventListener("phased-array-calculation-changed", () => {
 			this.find_element('calc-area').innerHTML = `${this.arrayControl.pa.geometry.area.toFixed(1)} λ<sub>0</sub><sup>2</sup>`
 			this.find_element('element-count').innerHTML = `${this.arrayControl.pa.geometry.length}`
+			update_power_displays();
 		});
 		this.find_element('refresh').addEventListener('click', () => {
 			this.update_url_parameters();

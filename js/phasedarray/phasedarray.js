@@ -222,6 +222,16 @@ export class PhasedArray{
 	totalPowerWatts(pAnt){
 		return Number(pAnt) * this.powerWeightSum;
 	}
+	/**
+	* Available RF power if every element were driven at full scale (W).
+	*
+	* @param {Number} pAnt Full-scale per-antenna power (W)
+	*
+	* @return {Number}
+	*/
+	availablePowerWatts(pAnt){
+		return Number(pAnt) * this.geometry.length;
+	}
 	create_farfield_vectors(freq_scale){
 		const pha = new Float32Array(this.size);
 		const mag = new Float32Array(this.size);
