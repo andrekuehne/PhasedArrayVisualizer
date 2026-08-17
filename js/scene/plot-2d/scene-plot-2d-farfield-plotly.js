@@ -37,10 +37,13 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 		this._title = '';
 		this._meshKey = '';
 		this._hoverBound = false;
+		this._lastHoverPt = null;
+		this._lastHoverClient = null;
 		this._sphN = 0;
 		this._sphZ = null;
 		this._sphX = null;
 		this._sphY = null;
+		this._clickSteer = this.find_element('farfield-click-steer');
 
 		this._init_colormap(cmapKey);
 		this.addEventListener('data-min-changed', () => {this._restyle_scale();});
@@ -108,7 +111,7 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 			return;
 		}
 		const z = this._z_data(ff);
-		window.Plotly.restyle(this.el, {z: [z]}, [0]);
+		window.Plotly.restyle(this.el, {z: [z]}, [0]).then(() => { this._refresh_hover(); });
 	}
 	_init_colormap(cmapKey){
 		const sel = this.find_element(cmapKey);
@@ -403,6 +406,7 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 			this._ready = true;
 			this._bind_hover();
 			this._apply_title();
+			this._refresh_hover();
 		};
 		if (!this._ready){
 			Plotly.newPlot(this.el, data, layout, PLOT_CONFIG).then(done);
@@ -425,7 +429,7 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 	}
 	_apply_title(){
 		if (!this._ready || !window.Plotly) return;
-		window.Plotly.relayout(this.el, {'title.text': this._title});
+		window.Plotly.relayout(this.el, {'title.text': this._title}).then(() => { this._refresh_hover(); });
 	}
 	_relayout_theme(){
 		if (!this._ready || !window.Plotly) return;
@@ -441,33 +445,111 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 		if (this._hoverBound) return;
 		this._hoverBound = true;
 		this.el.on('plotly_hover', (ev) => {
-			const pt = ev.points && ev.points[0];
-			const text = this._hover_text(pt);
-			if (!text){
-				this._hover.style.display = 'none';
-				return;
-			}
-			this._hover.innerHTML = text;
-			this._hover.style.display = 'block';
-			const wrap = this.el.parentElement;
-			const rect = wrap.getBoundingClientRect();
-			const mx = ev.event ? ev.event.clientX : rect.left;
-			const my = ev.event ? ev.event.clientY : rect.top;
-			const pad = 12;
-			let left = mx - rect.left + pad;
-			let top = my - rect.top + pad;
-			const hw = this._hover.offsetWidth;
-			const hh = this._hover.offsetHeight;
-			if (left + hw + 4 > rect.width) left = mx - rect.left - hw - pad;
-			if (top + hh + 4 > rect.height) top = my - rect.top - hh - pad;
-			if (left < 4) left = 4;
-			if (top < 4) top = 4;
-			this._hover.style.left = `${left}px`;
-			this._hover.style.top = `${top}px`;
+			this._show_hover(ev.points && ev.points[0], ev.event);
 		});
 		this.el.on('plotly_unhover', () => {
 			this._hover.style.display = 'none';
 		});
+		this.el.on('plotly_click', (ev) => { this._on_click(ev); });
+	}
+	_show_hover(pt, event){
+		if (pt != null && pt.x != null && pt.y != null){
+			this._lastHoverPt = {x: pt.x, y: pt.y};
+		}
+		if (event != null && event.clientX != null){
+			this._lastHoverClient = {x: event.clientX, y: event.clientY};
+		}
+		const text = this._hover_text(this._lastHoverPt);
+		if (!text){
+			this._hover.style.display = 'none';
+			return;
+		}
+		this._hover.innerHTML = text;
+		this._hover.style.display = 'block';
+		const wrap = this.el.parentElement;
+		const rect = wrap.getBoundingClientRect();
+		const mx = this._lastHoverClient ? this._lastHoverClient.x : rect.left;
+		const my = this._lastHoverClient ? this._lastHoverClient.y : rect.top;
+		const pad = 12;
+		let left = mx - rect.left + pad;
+		let top = my - rect.top + pad;
+		const hw = this._hover.offsetWidth;
+		const hh = this._hover.offsetHeight;
+		if (left + hw + 4 > rect.width) left = mx - rect.left - hw - pad;
+		if (top + hh + 4 > rect.height) top = my - rect.top - hh - pad;
+		if (left < 4) left = 4;
+		if (top < 4) top = 4;
+		this._hover.style.left = `${left}px`;
+		this._hover.style.top = `${top}px`;
+	}
+	_pointer_over_plot(){
+		if (this.el.matches(':hover')) return true;
+		const p = this._lastHoverClient;
+		if (p == null) return false;
+		const hit = document.elementFromPoint(p.x, p.y);
+		return hit != null && this.el.contains(hit);
+	}
+	_refresh_hover(){
+		if (this._lastHoverPt == null) return;
+		requestAnimationFrame(() => {
+			if (this._lastHoverPt == null || !this._pointer_over_plot()) return;
+			this._show_hover(this._lastHoverPt, null);
+		});
+	}
+	_on_click(ev){
+		if (!this._clickSteer.checked) return;
+		if (this.parent.queue != null && this.parent.queue.running) return;
+		const pt = ev.points && ev.points[0];
+		const coords = this._point_coords(pt);
+		if (coords == null) return;
+		const ff = this.ff;
+		const steer = this.parent.arrayControl && this.parent.arrayControl.steerControl;
+		if (ff == null || steer == null) return;
+		const fromName = ff.domain === 'uv' ? 'u-v' : ff.domain;
+		const converted = steer.build_active_object().from(fromName, coords.v1, coords.v2);
+		if (converted == null) return;
+		const [n1, n2] = converted;
+		if (!Number.isFinite(n1) || !Number.isFinite(n2)) return;
+		const c1 = steer.find_object_map('theta');
+		const c2 = steer.find_object_map('phi');
+		if (Number(c1.ele.value) === n1 && Number(c2.ele.value) === n2) return;
+		c1.set_value(n1);
+		c2.set_value(n2);
+		c1.ele.dispatchEvent(new Event('change'));
+		c2.ele.dispatchEvent(new Event('change'));
+		if (pt != null && pt.x != null && pt.y != null){
+			this._lastHoverPt = {x: pt.x, y: pt.y};
+		}
+		if (ev.event != null && ev.event.clientX != null){
+			this._lastHoverClient = {x: ev.event.clientX, y: ev.event.clientY};
+		}
+		this.parent.update_url_parameters();
+		this.parent.build_queue();
+	}
+	/**
+	 * Continuous plot-domain coordinates at a Plotly point.
+	 * @param {{x?: number, y?: number} | null} pt
+	 * @return {{v1: number, v2: number} | null}
+	 */
+	_point_coords(pt){
+		const ff = this.ff;
+		if (pt == null || ff == null) return null;
+		if (pt.x == null || pt.y == null) return null;
+		if (ff.domain === 'spherical'){
+			const u = Number(pt.x);
+			const v = Number(pt.y);
+			const r = Math.hypot(u, v);
+			if (r > 1) return null;
+			const [th, ph] = adjust_theta_phi(r * Math.PI / 2, Math.atan2(v, u), false);
+			return {v1: th * 180 / Math.PI, v2: ph * 180 / Math.PI};
+		}
+		if (ff.domain === 'uv'){
+			const u = Number(pt.x);
+			const v = Number(pt.y);
+			if (Math.hypot(u, v) > 1) return null;
+			return {v1: u, v2: v};
+		}
+		return {v1: Number(pt.x), v2: Number(pt.y)};
 	}
 	_nearest_index(axis, value){
 		if (axis == null || axis.length === 0) return 0;
@@ -480,8 +562,9 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 	}
 	_hover_text(pt){
 		const ff = this.ff;
-		if (pt == null || ff == null || ff.dirMax == null) return '';
-		if (pt.x == null || pt.y == null) return '';
+		if (ff == null || ff.dirMax == null) return '';
+		const coords = this._point_coords(pt);
+		if (coords == null) return '';
 		let it;
 		let ip;
 		let x;
@@ -490,13 +573,10 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 		let yLabel;
 		let unit = '';
 		if (ff.domain === 'spherical'){
-			const u = Number(pt.x);
-			const v = Number(pt.y);
-			const r = Math.hypot(u, v);
-			if (r > 1) return '';
 			const thetaStep = Math.PI / (ff.thetaPoints - 1);
 			const phiStep = Math.PI / (ff.phiPoints - 1);
-			const [th, ph] = adjust_theta_phi(r * Math.PI / 2, Math.atan2(v, u), false);
+			const th = coords.v1 * Math.PI / 180;
+			const ph = coords.v2 * Math.PI / 180;
 			it = Math.round((Math.PI / 2 + th) / thetaStep);
 			ip = Math.round((Math.PI / 2 + ph) / phiStep);
 			if (it >= ff.thetaPoints) it = ff.thetaPoints - 1;
@@ -510,16 +590,16 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 			unit = '°';
 		}
 		else if (ff.domain === 'uv'){
-			it = this._nearest_index(ff.u, Number(pt.x));
-			ip = this._nearest_index(ff.v, Number(pt.y));
+			it = this._nearest_index(ff.u, coords.v1);
+			ip = this._nearest_index(ff.v, coords.v2);
 			x = ff.u[it];
 			y = ff.v[ip];
 			xLabel = 'u';
 			yLabel = 'v';
 		}
 		else{
-			it = this._nearest_index(ff.az, Number(pt.x) * Math.PI / 180);
-			ip = this._nearest_index(ff.el, Number(pt.y) * Math.PI / 180);
+			it = this._nearest_index(ff.az, coords.v1 * Math.PI / 180);
+			ip = this._nearest_index(ff.el, coords.v2 * Math.PI / 180);
 			x = ff.az[it] * 180 / Math.PI;
 			y = ff.el[ip] * 180 / Math.PI;
 			xLabel = 'Az';

@@ -538,6 +538,10 @@ select{
 .footer-group input{
 	max-width: 56px;
 }
+.footer-group input[type="checkbox"]{
+	max-width: none;
+	width: auto;
+}
 canvas{
 	border: 1px solid var(--canvas-border-color);
 	box-shadow: 3px 3px var(--shadow);
