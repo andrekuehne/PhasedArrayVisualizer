@@ -12,6 +12,8 @@ The far-field array-factor sum (the nested element × grid loop in spherical, U-
 
 The crate lives in [`wasm/`](wasm/). Two artifacts are committed under [`js/wasm/`](js/wasm/): a `simd128` build and a scalar fallback. The page picks SIMD when the browser supports it.
 
+On browsers that support module Dedicated Workers, the kernel is split across workers by observation-grid rows (`ax2`). Each worker has its own WASM instance; inputs are copied and intensity tiles are transferred back. There is no `SharedArrayBuffer`. If workers are unavailable, the original main-thread tiled path is used.
+
 To rebuild after changing the Rust kernel (Rust stable, `wasm32-unknown-unknown`, and [`wasm-pack`](https://rustwasm.github.io/wasm-pack/) required):
 
 ```powershell
@@ -20,7 +22,7 @@ cargo install wasm-pack
 ./wasm/build.ps1
 ```
 
-Equivalence tests compare the original JavaScript loops to both WASM builds:
+Equivalence tests compare the original JavaScript loops to both WASM builds, including worker-style row splits:
 
 ```powershell
 node --test tests/farfield-equivalence.test.js

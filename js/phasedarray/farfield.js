@@ -1,5 +1,6 @@
 import {linspace} from "../util.js";
 import {getFarfieldKernel} from "../wasm/init.js";
+import {farfieldPoolSize, runFarfieldJob} from "../wasm/farfield-pool.js";
 
 /**
  * @typedef {FarfieldSpherical | FarfieldUV | FarfieldLudwig3} FarfieldHint
@@ -129,13 +130,13 @@ export class FarfieldABC{
 		}
 	}
 	/**
-	 * Tile the WASM array-factor kernel over ax2 rows.
+	 * Tile the WASM array-factor kernel over ax2 rows (main thread).
 	 * @param {ReturnType<FarfieldABC['create_parameters']>} pars
 	 * @param {number} domain
 	 * @param {ArrayLike<number>} ax1
 	 * @param {ArrayLike<number>} ax2
 	 */
-	*accumulate_wasm(pars, domain, ax1, ax2){
+	*accumulate_wasm_sync(pars, domain, ax1, ax2){
 		const kernel = getFarfieldKernel();
 		const [n1, n2] = this.meshPoints;
 		const tiles = Math.max(1, Math.ceil(n2 / TILE_ROWS));
@@ -158,6 +159,92 @@ export class FarfieldABC{
 		yield {text: 'Calculating total...', progress: tiles + 1, max: tiles + 2};
 		this.maxValue = kernel.finalize(pars.x.length);
 		this.wrap_flat_total(kernel.take_total());
+	}
+	/**
+	 * Tile the WASM array-factor kernel over ax2 rows, using workers when available.
+	 * @param {ReturnType<FarfieldABC['create_parameters']>} pars
+	 * @param {number} domain
+	 * @param {ArrayLike<number>} ax1
+	 * @param {ArrayLike<number>} ax2
+	 */
+	async *accumulate_wasm(pars, domain, ax1, ax2){
+		const [, n2] = this.meshPoints;
+		if (farfieldPoolSize() >= 2 && n2 >= 2){
+			try {
+				yield* this.accumulate_wasm_workers(pars, domain, ax1, ax2);
+				return;
+			}
+			catch (err){
+				if (err && err.message === 'cancelled') return;
+				console.warn('Farfield workers failed; using main thread.', err);
+			}
+		}
+		yield* this.accumulate_wasm_sync(pars, domain, ax1, ax2);
+	}
+	/**
+	 * @param {ReturnType<FarfieldABC['create_parameters']>} pars
+	 * @param {number} domain
+	 * @param {ArrayLike<number>} ax1
+	 * @param {ArrayLike<number>} ax2
+	 */
+	async *accumulate_wasm_workers(pars, domain, ax1, ax2){
+		const events = [];
+		let notify = null;
+		const push = (ev) => {
+			events.push(ev);
+			if (notify){
+				const n = notify;
+				notify = null;
+				n();
+			}
+		};
+		const wait = () => {
+			if (events.length) return Promise.resolve();
+			return new Promise((resolve) => { notify = resolve; });
+		};
+
+		runFarfieldJob({
+			domain,
+			frequencyScale: Number(this.frequencyScale),
+			nElements: pars.x.length,
+			x: as_f32(pars.x),
+			y: as_f32(pars.y),
+			mag: as_f32(pars.mag),
+			pha: as_f32(pars.pha),
+			ax1: as_f32(ax1),
+			ax2: as_f32(ax2),
+			tileRows: TILE_ROWS,
+		}, (done, total) => {
+			push({kind: 'progress', done, total});
+		}).then((result) => {
+			push({kind: 'done', result});
+		}, (err) => {
+			push({kind: 'error', err});
+		});
+
+		yield {text: 'Preparing farfield...', progress: 0, max: 1};
+		while (true){
+			await wait();
+			while (events.length){
+				const ev = events.shift();
+				if (ev.kind === 'progress'){
+					yield {
+						text: 'Calculating farfield...',
+						progress: ev.done,
+						max: Math.max(ev.total, 1) + 1,
+					};
+				}
+				else if (ev.kind === 'done'){
+					this.maxValue = ev.result.maxValue;
+					this.wrap_flat_total(ev.result.total);
+					yield {text: 'Calculating total...', progress: 1, max: 1};
+					return;
+				}
+				else {
+					throw ev.err || new Error('Farfield worker job failed');
+				}
+			}
+		}
 	}
 	cut(xc, xs, ys, axis){
 		xc = Number(xc);
@@ -189,7 +276,7 @@ export class FarfieldSpherical extends FarfieldABC{
 		this.theta = linspace(-Math.PI/2, Math.PI/2, this.thetaPoints);
 		this.phi = linspace(-Math.PI/2, Math.PI/2, this.phiPoints);
 	}
-	*calculator_loop(pa){
+	async *calculator_loop(pa){
 		const pars = this.create_parameters(pa);
 		this.idealDirectivity = 4 * Math.PI * pa.geometry.area * this.frequencyScale ** 2;
 		yield* this.accumulate_wasm(pars, DOMAIN_SPHERICAL, this.theta, this.phi);
@@ -242,7 +329,7 @@ export class FarfieldUV extends FarfieldABC{
 		this.u = linspace(-uMax, uMax, this.uPoints);
 		this.v = linspace(-vMax, vMax, this.vPoints);
 	}
-	*calculator_loop(pa){
+	async *calculator_loop(pa){
 		const pars = this.create_parameters(pa);
 		this.idealDirectivity = 4 * Math.PI * pa.geometry.area * this.frequencyScale ** 2;
 		yield* this.accumulate_wasm(pars, DOMAIN_UV, this.u, this.v);
@@ -299,7 +386,7 @@ export class FarfieldLudwig3 extends FarfieldABC{
 		this.az = linspace(-azMax*sc, azMax*sc, this.azPoints);
 		this.el = linspace(-elMax*sc, elMax*sc, this.elPoints);
 	}
-	*calculator_loop(pa){
+	async *calculator_loop(pa){
 		const pars = this.create_parameters(pa);
 		this.idealDirectivity = 4 * Math.PI * pa.geometry.area * this.frequencyScale ** 2;
 		yield* this.accumulate_wasm(pars, DOMAIN_LUDWIG3, this.az, this.el);

@@ -11,6 +11,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {after, before, describe, test} from 'node:test';
 import {linspace} from '../js/util.js';
 import {jsLudwig3, jsSpherical, jsUV} from './farfield-js-reference.js';
+import {mergeTotals, splitRowRanges} from '../js/wasm/farfield-pool.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DOMAIN_SPHERICAL = 0;
@@ -257,5 +258,65 @@ describe('JS vs WASM far-field kernel', () => {
 		const a = runWasm(simd, DOMAIN_UV, 1.0, x, y, mag, pha, u, v);
 		const b = runWasm(simd, DOMAIN_UV, 3.0, x, y, mag, pha, u, v);
 		assert.equal(maxAbsDiff(a.total, b.total), 0);
+	});
+});
+
+describe('worker row split / merge', () => {
+	test('splitRowRanges covers 0..n2 with contiguous slices', () => {
+		const cases = [
+			[10, 3],
+			[5, 8],
+			[1, 4],
+			[7, 1],
+			[513, 8],
+			[0, 4],
+		];
+		for (const [n2, nWorkers] of cases){
+			const ranges = splitRowRanges(n2, nWorkers);
+			if (n2 <= 0){
+				assert.equal(ranges.length, 0);
+				continue;
+			}
+			assert.ok(ranges.length >= 1);
+			assert.ok(ranges.length <= Math.min(nWorkers, n2));
+			assert.equal(ranges[0].row0, 0);
+			let next = 0;
+			let sum = 0;
+			for (const r of ranges){
+				assert.equal(r.row0, next);
+				assert.ok(r.rowCount >= 1);
+				next += r.rowCount;
+				sum += r.rowCount;
+			}
+			assert.equal(sum, n2);
+			assert.equal(next, n2);
+		}
+	});
+
+	test('sliced kernel + mergeTotals matches a full-grid run', async () => {
+		const kernel = await loadKernel('simd');
+		try {
+			const {x, y} = rectArray(4, 3, 0.5, 0.5);
+			const mag = ones(x.length);
+			const pha = steeringPhase(x, y, 10, 25);
+			const ax1 = linspace(-Math.PI / 2, Math.PI / 2, 9);
+			const ax2 = linspace(-Math.PI / 2, Math.PI / 2, 10);
+			const full = runWasm(kernel, DOMAIN_SPHERICAL, 1.05, x, y, mag, pha, ax1, ax2);
+
+			const ranges = splitRowRanges(ax2.length, 3);
+			const tiles = ranges.map((r) => {
+				const slice = ax2.subarray(r.row0, r.row0 + r.rowCount);
+				const out = runWasm(kernel, DOMAIN_SPHERICAL, 1.05, x, y, mag, pha, ax1, slice);
+				assert.equal(out.total.length, r.rowCount * ax1.length);
+				return out;
+			});
+			const merged = mergeTotals(ax1.length, ranges, tiles);
+			assert.equal(merged.total.length, full.total.length);
+			assert.equal(maxAbsDiff(merged.total, full.total), 0);
+			assert.equal(merged.maxValue, full.maxValue);
+		}
+		finally {
+			kernel.free();
+		}
 	});
 });

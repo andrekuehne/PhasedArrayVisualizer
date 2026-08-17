@@ -11,9 +11,13 @@ export class SceneQueue{
 	constructor(progressElement, statusElement){
 		this.progress = progressElement;
 		this.status = statusElement;
+		this.generation = 0;
 		this.reset();
 		this.channel = new MessageChannel();
-		this.channel.port1.onmessage = () => {this.process_queue()};
+		this.channel.port1.onmessage = (ev) => {
+			if (ev.data !== this.generation) return;
+			this.process_queue();
+		};
 		this.running = false;
 	}
 	/**
@@ -33,10 +37,10 @@ export class SceneQueue{
 	}
 	/**
 	* Add iterator to queue. Progress bar will be updated to match
-	* progress of iterator.
+	* progress of iterator. Sync and async generators are both accepted.
 	*
 	* @param {String} text String to display on status bar
-	* @param {function():Iterator<QueueIteratorResult>} func Callback iterator that yields information.
+	* @param {function():Iterator<QueueIteratorResult>|AsyncIterator<QueueIteratorResult>} func Callback iterator that yields information.
 	*
 	* @return {null}
 	* */
@@ -58,9 +62,11 @@ export class SceneQueue{
 		return this.queue.shift();
 	}
 	reset(){
+		this.generation++;
 		this.queue = [];
 		this.startingLength = 0;
 		this._current = null;
+		this.running = false;
 	}
 	start(finalText){
 		if (finalText === undefined) finalText = "Complete";
@@ -80,8 +86,14 @@ export class SceneQueue{
 			this.status.innerHTML = string;
 		}
 	}
+	_continue(gen){
+		if (gen !== this.generation) return;
+		this.channel.port2.postMessage(gen);
+	}
 	process_queue(){
+		const gen = this.generation;
 		const prog = this.progress;
+		const cont = () => { this._continue(gen); };
 		this.running = true;
 		if (this._current === null){
 			this._current = this.next();
@@ -92,11 +104,13 @@ export class SceneQueue{
 				return;
 			}
 			this.log(this._current['text']);
+			cont();
+			return;
 		}
-		else{
-			let c = this._current;
-			if (c['type'] == 'next'){
-				let v = c['func'].next();
+		const c = this._current;
+		if (c['type'] == 'next'){
+			Promise.resolve(c['func'].next()).then((v) => {
+				if (gen !== this.generation) return;
 				if (v.done) {
 					this._current = null;
 					prog.max = this.startingLength;
@@ -107,16 +121,24 @@ export class SceneQueue{
 					prog.max = v.value['max'];
 					prog.value = v.value['progress'];
 				}
-			}
-			else if (c['type'] == 'iterator'){
-				this._current['type'] = 'next';
-				this._current['func'] = c['func']();
-			}
-			else {
-				c['func']();
+				cont();
+			}, (err) => {
+				console.error(err);
+				if (gen !== this.generation) return;
 				this._current = null;
-			}
+				this.log(String(err), true);
+				cont();
+			});
+			return;
 		}
-		this.channel.port2.postMessage("");
+		if (c['type'] == 'iterator'){
+			this._current['type'] = 'next';
+			this._current['func'] = c['func']();
+			cont();
+			return;
+		}
+		c['func']();
+		this._current = null;
+		cont();
 	}
 }
