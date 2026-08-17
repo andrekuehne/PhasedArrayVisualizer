@@ -1,10 +1,23 @@
 import {linspace} from "../util.js";
+import {getFarfieldKernel} from "../wasm/init.js";
 
 /**
  * @typedef {FarfieldSpherical | FarfieldUV | FarfieldLudwig3} FarfieldHint
  */
 
 const CON_FREQ = {"title": "Frequency Scale", "type": "float", "default": 1.0, "min": 0.0, "step": 0.01};
+const DOMAIN_SPHERICAL = 0;
+const DOMAIN_UV = 1;
+const DOMAIN_LUDWIG3 = 2;
+const TILE_ROWS = 32;
+
+/**
+ * @param {ArrayLike<number>} a
+ * @returns {Float32Array}
+ */
+function as_f32(a){
+	return a instanceof Float32Array ? a : Float32Array.from(a);
+}
 
 export class FarfieldABC{
 	static args = ['farfield-ax1-points', 'farfield-ax2-points', 'farfield-frequency'];
@@ -103,6 +116,49 @@ export class FarfieldABC{
 			mag: mag,
 		}
 	}
+	/**
+	 * Wrap a flat row-major intensity buffer as `farfield_total[i2][i1]`.
+	 * @param {Float32Array} flat
+	 */
+	wrap_flat_total(flat){
+		const [p1, p2] = this.meshPoints;
+		this._totalFlat = flat;
+		this.farfield_total = new Array(p2);
+		for (let i2 = 0; i2 < p2; i2++){
+			this.farfield_total[i2] = flat.subarray(i2 * p1, (i2 + 1) * p1);
+		}
+	}
+	/**
+	 * Tile the WASM array-factor kernel over ax2 rows.
+	 * @param {ReturnType<FarfieldABC['create_parameters']>} pars
+	 * @param {number} domain
+	 * @param {ArrayLike<number>} ax1
+	 * @param {ArrayLike<number>} ax2
+	 */
+	*accumulate_wasm(pars, domain, ax1, ax2){
+		const kernel = getFarfieldKernel();
+		const [n1, n2] = this.meshPoints;
+		const tiles = Math.max(1, Math.ceil(n2 / TILE_ROWS));
+		yield {text: 'Preparing farfield...', progress: 0, max: tiles + 2};
+		kernel.prepare(n1, n2);
+		kernel.set_inputs(
+			as_f32(pars.x),
+			as_f32(pars.y),
+			as_f32(pars.mag),
+			as_f32(pars.pha),
+			as_f32(ax1),
+			as_f32(ax2)
+		);
+		for (let t = 0; t < tiles; t++){
+			const row0 = t * TILE_ROWS;
+			const rowCount = Math.min(TILE_ROWS, n2 - row0);
+			yield {text: 'Calculating farfield...', progress: t + 1, max: tiles + 2};
+			kernel.accumulate_tile(domain, Number(this.frequencyScale), row0, rowCount);
+		}
+		yield {text: 'Calculating total...', progress: tiles + 1, max: tiles + 2};
+		this.maxValue = kernel.finalize(pars.x.length);
+		this.wrap_flat_total(kernel.take_total());
+	}
 	cut(xc, xs, ys, axis){
 		xc = Number(xc);
 		const mp = Float32Array.from(xs, (x) => Math.abs(x - xc));
@@ -135,29 +191,8 @@ export class FarfieldSpherical extends FarfieldABC{
 	}
 	*calculator_loop(pa, skipLog){
 		const pars = this.create_parameters(pa);
-		const p = 2 * Math.PI;
-		const sc = p * this.frequencyScale;
-		yield pars.yield('Resetting spherical...');
-		this.reset_parameters();
-		let sinThetaPi = Float32Array.from(this.theta, (t) => sc * Math.sin(t));
-		yield pars.yield('Clearing spherical...');
-		this.clear_parameters();
 		this.idealDirectivity = 4 * Math.PI * pa.geometry.area * this.frequencyScale ** 2;
-		for (let i = 0; i < pars.x.length; i++){
-			yield pars.yield('Calculating spherical re/im...');
-			for (let ip = 0; ip < this.phiPoints; ip++){
-				const xxv = pars.x[i]*Math.cos(this.phi[ip]);
-				const yyv = pars.y[i]*Math.sin(this.phi[ip]);
-				for (let it = 0; it < this.thetaPoints; it++){
-					const jk = sinThetaPi[it];
-					const v = xxv*jk + yyv*jk + pars.pha[i];
-					this.farfield_re[ip][it] += pars.mag[i]*Math.cos(v);
-					this.farfield_im[ip][it] += pars.mag[i]*Math.sin(v);
-				}
-			}
-		}
-		yield pars.yield('Calculating spherical total...');
-		this.calculate_total(pars.x.length);
+		yield* this.accumulate_wasm(pars, DOMAIN_SPHERICAL, this.theta, this.phi);
 		yield pars.yield('Calculating spherical directivity...');
 		this.dirMax = this.compute_directivity();
 		if (skipLog === undefined || skipLog === false){
@@ -211,28 +246,9 @@ export class FarfieldUV extends FarfieldABC{
 	}
 	*calculator_loop(pa){
 		const pars = this.create_parameters(pa);
-		yield pars.yield('Resetting UV...');
-		this.reset_parameters();
-		yield pars.yield('Clearing UV...');
-		this.clear_parameters();
+		yield* this.accumulate_wasm(pars, DOMAIN_UV, this.u, this.v);
 
-		const pi2 = 2*Math.PI;
-		for (let i = 0; i < pars.x.length; i++){
-			yield pars.yield('Calculating UV re/im...');
-			for (let iv = 0; iv < this.vPoints; iv++){
-				const xxv = pars.x[i];
-				const yyv = pars.y[i]*this.v[iv];
-				for (let iu = 0; iu < this.uPoints; iu++){
-					const v = (xxv*this.u[iu] + yyv)*pi2 + pars.pha[i];
-					this.farfield_re[iv][iu] += pars.mag[i]*Math.cos(v);
-					this.farfield_im[iv][iu] += pars.mag[i]*Math.sin(v);
-				}
-			}
-		}
-		yield pars.yield('Calculating UV total...');
-		this.calculate_total(pars.x.length);
-
-		const sph = new FarfieldSpherical(this.uPoints, this.vPoints);
+		const sph = new FarfieldSpherical(this.uPoints, this.vPoints, this.frequencyScale);
 		const lpi = sph.calculator_loop(pa);
 		while (1){
 			const n = lpi.next();
@@ -279,27 +295,8 @@ export class FarfieldLudwig3 extends FarfieldABC{
 	}
 	*calculator_loop(pa){
 		const pars = this.create_parameters(pa);
-		yield pars.yield('Resetting Ludwig3...');
-		this.reset_parameters();
-		yield pars.yield('Clearing Ludwig3...');
-		this.clear_parameters();
-
-		const pi2 = 2*Math.PI;
-		for (let i = 0; i < pars.x.length; i++){
-			yield pars.yield('Calculating Ludwig3 re/im...');
-			for (let iv = 0; iv < this.elPoints; iv++){
-				const xxv = pars.x[i]*Math.cos(this.el[iv]);
-				const yyv = pars.y[i]*Math.sin(this.el[iv]);
-				for (let iu = 0; iu < this.azPoints; iu++){
-					const w = (xxv*Math.sin(this.az[iu]) + yyv)*pi2 + pars.pha[i];
-					this.farfield_re[iv][iu] += pars.mag[i]*Math.cos(w);
-					this.farfield_im[iv][iu] += pars.mag[i]*Math.sin(w);
-				}
-			}
-		}
-		yield pars.yield('Calculating Ludwig3 total...');
-		this.calculate_total(pars.x.length);
-		const sph = new FarfieldSpherical(this.azPoints, this.elPoints);
+		yield* this.accumulate_wasm(pars, DOMAIN_LUDWIG3, this.az, this.el);
+		const sph = new FarfieldSpherical(this.azPoints, this.elPoints, this.frequencyScale);
 		const lpi = sph.calculator_loop(pa);
 		while (1){
 			const n = lpi.next();

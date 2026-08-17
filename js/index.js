@@ -4,9 +4,11 @@ import {ScenePlotFarfield2D} from "./scene/plot-2d/scene-plot-2d-farfield.js";
 import {ScenePlot2DGeometryGeneric} from "./scene/plot-2d/scene-plot-2d-geometry.js";
 import {SceneParent} from "./scene/scene-abc.js"
 import {SceneTheme} from "./scene/scene-util.js";
+import {initFarfieldWasm} from "./wasm/init.js";
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
 	new SceneTheme();
+	await initFarfieldWasm();
 	const scene = new PhasedArrayScene('pa');
 	scene.build_queue();
 });
