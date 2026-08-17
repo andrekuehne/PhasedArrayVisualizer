@@ -10,6 +10,8 @@ const SIMD_TEST = new Uint8Array([
 
 /** @type {import('./simd/farfield_kernel.js').FarfieldKernel | null} */
 let kernel = null;
+/** @type {typeof import('./simd/farfield_kernel.js').extract_pattern_metrics | null} */
+let extractFn = null;
 
 export function wasmSupportsSimd(){
 	try {
@@ -30,6 +32,21 @@ export function getFarfieldKernel(){
 	return kernel;
 }
 
+/**
+ * Extract HPBW and sidelobe metrics from a computed intensity map.
+ * @param {number} domain
+ * @param {Float32Array} ax1
+ * @param {Float32Array} ax2
+ * @param {Float32Array} total
+ * @returns {import('./simd/farfield_kernel.js').PatternMetrics}
+ */
+export function extractPatternMetrics(domain, ax1, ax2, total){
+	if (extractFn === null){
+		throw new Error('Farfield WASM kernel is not initialized.');
+	}
+	return extractFn(domain, ax1, ax2, total);
+}
+
 export async function initFarfieldWasm(){
 	const useSimd = wasmSupportsSimd();
 	const mod = useSimd
@@ -37,6 +54,7 @@ export async function initFarfieldWasm(){
 		: await import('./scalar/farfield_kernel.js');
 	await mod.default();
 	kernel = new mod.FarfieldKernel();
+	extractFn = mod.extract_pattern_metrics;
 	try {
 		await startFarfieldPool({simd: useSimd});
 	}

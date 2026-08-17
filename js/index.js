@@ -13,6 +13,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 	scene.build_queue();
 });
 
+/**
+ * @param {Record<string, number|boolean>|null} m
+ * @param {'ax1'|'ax2'} axis
+ * @param {boolean} isUv
+ */
+function formatHpbw(m, axis, isUv){
+	if (m == null) return '—';
+	const clipped = m[`hpbw_${axis}_clipped`];
+	const deg = m[`hpbw_${axis}_deg`];
+	if (clipped || !Number.isFinite(deg)) return 'clipped';
+	if (isUv){
+		const native = m[`hpbw_${axis}`];
+		const n = Number.isFinite(native) ? native.toFixed(3) : '—';
+		return `${deg.toFixed(1)} deg (${n})`;
+	}
+	return `${deg.toFixed(1)} deg`;
+}
+
+/**
+ * @param {number} db
+ */
+function formatSll(db){
+	if (!Number.isFinite(db)) return '—';
+	return `${db.toFixed(1)} dB`;
+}
+
 /**	 *
  * Create scene for Phased Array simulator.
  *
@@ -67,6 +93,9 @@ export class PhasedArrayScene extends SceneParent{
 		this.farfieldControl.add_max_monitor('ideal-directivity', (v) => {
 			this.find_element('ideal-directivity').innerHTML = `${(10 * Math.log10(v)).toFixed(1)} dB`
 		});
+		this.farfieldControl.add_max_monitor('pattern-metrics', (m) => {
+			this.update_pattern_metrics_display(m);
+		});
 		this.arrayControl.powerControl.addEventListener('power-changed', () => {
 			update_power_displays();
 		});
@@ -87,6 +116,22 @@ export class PhasedArrayScene extends SceneParent{
 		this.create_popup_overlay();
 		this.bind_url_elements();
 		this.trigger_event('scene-loaded');
+	}
+	update_pattern_metrics_display(m){
+		const ff = this.farfieldControl.ff;
+		const labels = {
+			spherical: ['HPBW Theta', 'HPBW Phi'],
+			uv: ['HPBW U', 'HPBW V'],
+			ludwig3: ['HPBW Az', 'HPBW El'],
+		};
+		const pair = (ff && labels[ff.domain]) ? labels[ff.domain] : ['HPBW Axis 1', 'HPBW Axis 2'];
+		this.find_element('hpbw-ax1-label').textContent = pair[0];
+		this.find_element('hpbw-ax2-label').textContent = pair[1];
+		const isUv = ff != null && ff.domain === 'uv';
+		this.find_element('hpbw-ax1').textContent = formatHpbw(m, 'ax1', isUv);
+		this.find_element('hpbw-ax2').textContent = formatHpbw(m, 'ax2', isUv);
+		this.find_element('nearest-sll').textContent = formatSll(m && m.nearest_sll_db);
+		this.find_element('largest-sll').textContent = formatSll(m && m.largest_sll_db);
 	}
 	build_queue(){
 		this.queue.reset();

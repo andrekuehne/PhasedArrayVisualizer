@@ -75,6 +75,255 @@ export class FarfieldKernel {
     }
 }
 if (Symbol.dispose) FarfieldKernel.prototype[Symbol.dispose] = FarfieldKernel.prototype.free;
+
+/**
+ * Pattern-feature metrics extracted from a computed intensity map.
+ */
+export class PatternMetrics {
+    static __wrap(ptr) {
+        const obj = Object.create(PatternMetrics.prototype);
+        obj.__wbg_ptr = ptr;
+        PatternMetricsFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PatternMetricsFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_patternmetrics_free(ptr, 0);
+    }
+    /**
+     * @returns {boolean}
+     */
+    get hpbw_ax1_clipped() {
+        const ret = wasm.__wbg_get_patternmetrics_hpbw_ax1_clipped(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get hpbw_ax1_deg() {
+        const ret = wasm.__wbg_get_patternmetrics_hpbw_ax1_deg(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get hpbw_ax1() {
+        const ret = wasm.__wbg_get_patternmetrics_hpbw_ax1(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {boolean}
+     */
+    get hpbw_ax2_clipped() {
+        const ret = wasm.__wbg_get_patternmetrics_hpbw_ax2_clipped(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get hpbw_ax2_deg() {
+        const ret = wasm.__wbg_get_patternmetrics_hpbw_ax2_deg(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get hpbw_ax2() {
+        const ret = wasm.__wbg_get_patternmetrics_hpbw_ax2(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get largest_sll_ax1() {
+        const ret = wasm.__wbg_get_patternmetrics_largest_sll_ax1(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get largest_sll_ax2() {
+        const ret = wasm.__wbg_get_patternmetrics_largest_sll_ax2(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get largest_sll_db() {
+        const ret = wasm.__wbg_get_patternmetrics_largest_sll_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get nearest_sll_ax1() {
+        const ret = wasm.__wbg_get_patternmetrics_nearest_sll_ax1(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get nearest_sll_ax2() {
+        const ret = wasm.__wbg_get_patternmetrics_nearest_sll_ax2(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get nearest_sll_db() {
+        const ret = wasm.__wbg_get_patternmetrics_nearest_sll_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get peak_ax1() {
+        const ret = wasm.__wbg_get_patternmetrics_peak_ax1(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get peak_ax2() {
+        const ret = wasm.__wbg_get_patternmetrics_peak_ax2(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get peak_i1() {
+        const ret = wasm.__wbg_get_patternmetrics_peak_i1(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get peak_i2() {
+        const ret = wasm.__wbg_get_patternmetrics_peak_i2(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {boolean} arg0
+     */
+    set hpbw_ax1_clipped(arg0) {
+        wasm.__wbg_set_patternmetrics_hpbw_ax1_clipped(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set hpbw_ax1_deg(arg0) {
+        wasm.__wbg_set_patternmetrics_hpbw_ax1_deg(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set hpbw_ax1(arg0) {
+        wasm.__wbg_set_patternmetrics_hpbw_ax1(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {boolean} arg0
+     */
+    set hpbw_ax2_clipped(arg0) {
+        wasm.__wbg_set_patternmetrics_hpbw_ax2_clipped(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set hpbw_ax2_deg(arg0) {
+        wasm.__wbg_set_patternmetrics_hpbw_ax2_deg(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set hpbw_ax2(arg0) {
+        wasm.__wbg_set_patternmetrics_hpbw_ax2(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set largest_sll_ax1(arg0) {
+        wasm.__wbg_set_patternmetrics_largest_sll_ax1(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set largest_sll_ax2(arg0) {
+        wasm.__wbg_set_patternmetrics_largest_sll_ax2(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set largest_sll_db(arg0) {
+        wasm.__wbg_set_patternmetrics_largest_sll_db(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set nearest_sll_ax1(arg0) {
+        wasm.__wbg_set_patternmetrics_nearest_sll_ax1(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set nearest_sll_ax2(arg0) {
+        wasm.__wbg_set_patternmetrics_nearest_sll_ax2(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set nearest_sll_db(arg0) {
+        wasm.__wbg_set_patternmetrics_nearest_sll_db(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set peak_ax1(arg0) {
+        wasm.__wbg_set_patternmetrics_peak_ax1(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set peak_ax2(arg0) {
+        wasm.__wbg_set_patternmetrics_peak_ax2(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set peak_i1(arg0) {
+        wasm.__wbg_set_patternmetrics_peak_i1(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set peak_i2(arg0) {
+        wasm.__wbg_set_patternmetrics_peak_i2(this.__wbg_ptr, arg0);
+    }
+}
+if (Symbol.dispose) PatternMetrics.prototype[Symbol.dispose] = PatternMetrics.prototype.free;
+
+/**
+ * @param {number} domain
+ * @param {Float32Array} ax1
+ * @param {Float32Array} ax2
+ * @param {Float32Array} total
+ * @returns {PatternMetrics}
+ */
+export function extract_pattern_metrics(domain, ax1, ax2, total) {
+    const ptr0 = passArrayF32ToWasm0(ax1, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArrayF32ToWasm0(ax2, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArrayF32ToWasm0(total, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.extract_pattern_metrics(domain, ptr0, len0, ptr1, len1, ptr2, len2);
+    return PatternMetrics.__wrap(ret);
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -100,6 +349,9 @@ function __wbg_get_imports() {
 const FarfieldKernelFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_farfieldkernel_free(ptr, 1));
+const PatternMetricsFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_patternmetrics_free(ptr, 1));
 
 function getArrayF32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;

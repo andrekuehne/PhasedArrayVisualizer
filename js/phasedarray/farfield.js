@@ -1,5 +1,5 @@
 import {linspace} from "../util.js";
-import {getFarfieldKernel} from "../wasm/init.js";
+import {extractPatternMetrics, getFarfieldKernel} from "../wasm/init.js";
 import {farfieldPoolSize, runFarfieldJob} from "../wasm/farfield-pool.js";
 
 /**
@@ -39,6 +39,7 @@ export class FarfieldABC{
 		this.maxValue = -Infinity;
 		this.dirMax = null;
 		this.idealDirectivity = null;
+		this.patternMetrics = null;
 
 		this.frequency_scale = 1.0;
 		for (let i = 0; i < ax2Points; i++){
@@ -127,6 +128,50 @@ export class FarfieldABC{
 		this.farfield_total = new Array(p2);
 		for (let i2 = 0; i2 < p2; i2++){
 			this.farfield_total[i2] = flat.subarray(i2 * p1, (i2 + 1) * p1);
+		}
+	}
+	/**
+	 * Copy WASM `PatternMetrics` into a plain object and free the wasm handle.
+	 * @param {import('../wasm/simd/farfield_kernel.js').PatternMetrics} m
+	 */
+	static copy_pattern_metrics(m){
+		const o = {
+			peak_i1: m.peak_i1,
+			peak_i2: m.peak_i2,
+			peak_ax1: m.peak_ax1,
+			peak_ax2: m.peak_ax2,
+			hpbw_ax1: m.hpbw_ax1,
+			hpbw_ax2: m.hpbw_ax2,
+			hpbw_ax1_deg: m.hpbw_ax1_deg,
+			hpbw_ax2_deg: m.hpbw_ax2_deg,
+			hpbw_ax1_clipped: m.hpbw_ax1_clipped,
+			hpbw_ax2_clipped: m.hpbw_ax2_clipped,
+			nearest_sll_db: m.nearest_sll_db,
+			largest_sll_db: m.largest_sll_db,
+			nearest_sll_ax1: m.nearest_sll_ax1,
+			nearest_sll_ax2: m.nearest_sll_ax2,
+			largest_sll_ax1: m.largest_sll_ax1,
+			largest_sll_ax2: m.largest_sll_ax2,
+		};
+		if (typeof m.free === 'function') m.free();
+		return o;
+	}
+	/**
+	 * Extract HPBW / SLL from the current intensity grid.
+	 * @param {number} domain
+	 * @param {ArrayLike<number>} ax1
+	 * @param {ArrayLike<number>} ax2
+	 */
+	compute_pattern_metrics(domain, ax1, ax2){
+		this.patternMetrics = null;
+		if (this._totalFlat == null) return;
+		try {
+			this.patternMetrics = FarfieldABC.copy_pattern_metrics(
+				extractPatternMetrics(domain, as_f32(ax1), as_f32(ax2), this._totalFlat)
+			);
+		}
+		catch (err){
+			console.warn('Pattern metrics failed.', err);
 		}
 	}
 	/**
@@ -282,6 +327,8 @@ export class FarfieldSpherical extends FarfieldABC{
 		yield* this.accumulate_wasm(pars, DOMAIN_SPHERICAL, this.theta, this.phi);
 		yield pars.yield('Calculating spherical directivity...');
 		this.dirMax = this.compute_directivity();
+		yield pars.yield('Calculating spherical pattern metrics...');
+		this.compute_pattern_metrics(DOMAIN_SPHERICAL, this.theta, this.phi);
 		yield pars.yield('Calculating spherical log...');
 		this.calculate_log();
 	}
@@ -335,6 +382,8 @@ export class FarfieldUV extends FarfieldABC{
 		yield* this.accumulate_wasm(pars, DOMAIN_UV, this.u, this.v);
 		yield pars.yield('Calculating UV directivity...');
 		this.dirMax = this.compute_directivity();
+		yield pars.yield('Calculating UV pattern metrics...');
+		this.compute_pattern_metrics(DOMAIN_UV, this.u, this.v);
 		yield pars.yield('Calculating UV log...');
 		this.calculate_log();
 	}
@@ -392,6 +441,8 @@ export class FarfieldLudwig3 extends FarfieldABC{
 		yield* this.accumulate_wasm(pars, DOMAIN_LUDWIG3, this.az, this.el);
 		yield pars.yield('Calculating Ludwig3 directivity...');
 		this.dirMax = this.compute_directivity();
+		yield pars.yield('Calculating Ludwig3 pattern metrics...');
+		this.compute_pattern_metrics(DOMAIN_LUDWIG3, this.az, this.el);
 		yield pars.yield('Calculating Ludwig3 log...');
 		this.calculate_log();
 	}

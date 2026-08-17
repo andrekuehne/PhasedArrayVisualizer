@@ -12,11 +12,72 @@ export class FarfieldKernel {
     take_total(): Float32Array;
 }
 
+/**
+ * Pattern-feature metrics extracted from a computed intensity map.
+ */
+export class PatternMetrics {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    hpbw_ax1_clipped: boolean;
+    hpbw_ax1_deg: number;
+    hpbw_ax1: number;
+    hpbw_ax2_clipped: boolean;
+    hpbw_ax2_deg: number;
+    hpbw_ax2: number;
+    largest_sll_ax1: number;
+    largest_sll_ax2: number;
+    largest_sll_db: number;
+    nearest_sll_ax1: number;
+    nearest_sll_ax2: number;
+    nearest_sll_db: number;
+    peak_ax1: number;
+    peak_ax2: number;
+    peak_i1: number;
+    peak_i2: number;
+}
+
+export function extract_pattern_metrics(domain: number, ax1: Float32Array, ax2: Float32Array, total: Float32Array): PatternMetrics;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_farfieldkernel_free: (a: number, b: number) => void;
+    readonly __wbg_get_patternmetrics_hpbw_ax1: (a: number) => number;
+    readonly __wbg_get_patternmetrics_hpbw_ax1_clipped: (a: number) => number;
+    readonly __wbg_get_patternmetrics_hpbw_ax1_deg: (a: number) => number;
+    readonly __wbg_get_patternmetrics_hpbw_ax2: (a: number) => number;
+    readonly __wbg_get_patternmetrics_hpbw_ax2_clipped: (a: number) => number;
+    readonly __wbg_get_patternmetrics_hpbw_ax2_deg: (a: number) => number;
+    readonly __wbg_get_patternmetrics_largest_sll_ax1: (a: number) => number;
+    readonly __wbg_get_patternmetrics_largest_sll_ax2: (a: number) => number;
+    readonly __wbg_get_patternmetrics_largest_sll_db: (a: number) => number;
+    readonly __wbg_get_patternmetrics_nearest_sll_ax1: (a: number) => number;
+    readonly __wbg_get_patternmetrics_nearest_sll_ax2: (a: number) => number;
+    readonly __wbg_get_patternmetrics_nearest_sll_db: (a: number) => number;
+    readonly __wbg_get_patternmetrics_peak_ax1: (a: number) => number;
+    readonly __wbg_get_patternmetrics_peak_ax2: (a: number) => number;
+    readonly __wbg_get_patternmetrics_peak_i1: (a: number) => number;
+    readonly __wbg_get_patternmetrics_peak_i2: (a: number) => number;
+    readonly __wbg_patternmetrics_free: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_hpbw_ax1: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_hpbw_ax1_clipped: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_hpbw_ax1_deg: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_hpbw_ax2: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_hpbw_ax2_clipped: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_hpbw_ax2_deg: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_largest_sll_ax1: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_largest_sll_ax2: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_largest_sll_db: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_nearest_sll_ax1: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_nearest_sll_ax2: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_nearest_sll_db: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_peak_ax1: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_peak_ax2: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_peak_i1: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_peak_i2: (a: number, b: number) => void;
+    readonly extract_pattern_metrics: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly farfieldkernel_accumulate_tile: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly farfieldkernel_finalize: (a: number, b: number) => number;
     readonly farfieldkernel_new: () => number;
