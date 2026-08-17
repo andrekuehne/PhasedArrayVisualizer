@@ -189,16 +189,14 @@ export class FarfieldSpherical extends FarfieldABC{
 		this.theta = linspace(-Math.PI/2, Math.PI/2, this.thetaPoints);
 		this.phi = linspace(-Math.PI/2, Math.PI/2, this.phiPoints);
 	}
-	*calculator_loop(pa, skipLog){
+	*calculator_loop(pa){
 		const pars = this.create_parameters(pa);
 		this.idealDirectivity = 4 * Math.PI * pa.geometry.area * this.frequencyScale ** 2;
 		yield* this.accumulate_wasm(pars, DOMAIN_SPHERICAL, this.theta, this.phi);
 		yield pars.yield('Calculating spherical directivity...');
 		this.dirMax = this.compute_directivity();
-		if (skipLog === undefined || skipLog === false){
-			yield pars.yield('Calculating spherical log...');
-			this.calculate_log();
-		}
+		yield pars.yield('Calculating spherical log...');
+		this.calculate_log();
 	}
 	compute_directivity(){
 		let bsa = 0;
@@ -246,21 +244,29 @@ export class FarfieldUV extends FarfieldABC{
 	}
 	*calculator_loop(pa){
 		const pars = this.create_parameters(pa);
+		this.idealDirectivity = 4 * Math.PI * pa.geometry.area * this.frequencyScale ** 2;
 		yield* this.accumulate_wasm(pars, DOMAIN_UV, this.u, this.v);
-
-		const sph = new FarfieldSpherical(this.uPoints, this.vPoints, this.frequencyScale);
-		const lpi = sph.calculator_loop(pa);
-		while (1){
-			const n = lpi.next();
-			if (n['done']) break;
-			yield n['value'];
-		}
-		this.dirMax = sph.dirMax;
-		this.idealDirectivity = sph.idealDirectivity;
+		yield pars.yield('Calculating UV directivity...');
+		this.dirMax = this.compute_directivity();
 		yield pars.yield('Calculating UV log...');
 		this.calculate_log();
 	}
-	compute_directivity(){ throw Error("Cannot calculate directivity with U-V coordinates."); }
+	compute_directivity(){
+		// Front-hemisphere solid angle: dΩ = du dv / √(1-u²-v²) for u²+v² < 1.
+		const du = this.u[1] - this.u[0];
+		const dv = this.v[1] - this.v[0];
+		let bsa = 0;
+		for (let iv = 0; iv < this.vPoints; iv++){
+			const v = this.v[iv];
+			for (let iu = 0; iu < this.uPoints; iu++){
+				const r2 = this.u[iu] * this.u[iu] + v * v;
+				if (r2 >= 1) continue;
+				bsa += this.farfield_total[iv][iu] / Math.sqrt(1 - r2);
+			}
+		}
+		bsa *= du * dv;
+		return 4 * Math.PI * this.maxValue / bsa;
+	}
 	constant_u(u){
 		const y = this.cut(u, this.u, this.farfield_log, 1);
 		if (y === null) return [null, null];
@@ -295,20 +301,27 @@ export class FarfieldLudwig3 extends FarfieldABC{
 	}
 	*calculator_loop(pa){
 		const pars = this.create_parameters(pa);
+		this.idealDirectivity = 4 * Math.PI * pa.geometry.area * this.frequencyScale ** 2;
 		yield* this.accumulate_wasm(pars, DOMAIN_LUDWIG3, this.az, this.el);
-		const sph = new FarfieldSpherical(this.azPoints, this.elPoints, this.frequencyScale);
-		const lpi = sph.calculator_loop(pa);
-		while (1){
-			const n = lpi.next();
-			if (n['done']) break;
-			yield n['value'];
-		}
-		this.dirMax = sph.dirMax;
-		this.idealDirectivity = sph.idealDirectivity;
+		yield pars.yield('Calculating Ludwig3 directivity...');
+		this.dirMax = this.compute_directivity();
 		yield pars.yield('Calculating Ludwig3 log...');
 		this.calculate_log();
 	}
-	compute_directivity(){ throw Error("Cannot calculate directivity with Ludwig3 coordinates."); }
+	compute_directivity(){
+		// Front-hemisphere solid angle: dΩ = |cos(el)| daz del.
+		const daz = this.az[1] - this.az[0];
+		const del = this.el[1] - this.el[0];
+		const step = daz * del;
+		let bsa = 0;
+		for (let ie = 0; ie < this.elPoints; ie++){
+			const w = Math.abs(Math.cos(this.el[ie])) * step;
+			for (let ia = 0; ia < this.azPoints; ia++){
+				bsa += this.farfield_total[ie][ia] * w;
+			}
+		}
+		return 4 * Math.PI * this.maxValue / bsa;
+	}
 	constant_az(az){
 		const y = this.cut(az, this.az, this.farfield_log, 1);
 		if (y === null) return [null, null];
