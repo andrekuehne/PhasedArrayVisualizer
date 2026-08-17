@@ -1,6 +1,6 @@
 import {SceneControlPhasedArray, SceneControlFarfieldDomain, SceneTaperCuts} from "./index-scenes.js";
 import {ScenePlotFarfieldCuts} from "./scene/plot-1d/scene-plot-farfield-cuts.js";
-import {ScenePlotFarfield2D} from "./scene/plot-2d/scene-plot-2d-farfield.js";
+import {ScenePlotFarfield2DPlotly} from "./scene/plot-2d/scene-plot-2d-farfield-plotly.js";
 import {ScenePlot2DGeometryGeneric} from "./scene/plot-2d/scene-plot-2d-geometry.js";
 import {SceneParent} from "./scene/scene-abc.js"
 import {SceneTheme} from "./scene/scene-util.js";
@@ -25,7 +25,7 @@ export class PhasedArrayScene extends SceneParent{
 		this.arrayControl = new SceneControlPhasedArray(this);
 		this.farfieldControl = new SceneControlFarfieldDomain(this, 'farfield-domain');
 
-		this.plotFF = new ScenePlotFarfield2D(this, this.find_element('farfield-canvas-2d'), 'farfield-2d-colormap');
+		this.plotFF = new ScenePlotFarfield2DPlotly(this, this.find_element('farfield-plot-2d'), 'farfield-2d-colormap');
 		this.plot1D = new ScenePlotFarfieldCuts(this, this.find_element('farfield-canvas-1d'), 'farfield-1d-colormap');
 		this.plotTaper = new SceneTaperCuts(this, this.find_element('taper-canvas-1d'), 'taper-1d-colormap');
 		this.geoPlot1 = new ScenePlot2DGeometryGeneric(this, this.find_element('geo-canvas-1'), "Element", "deg");
@@ -54,8 +54,9 @@ export class PhasedArrayScene extends SceneParent{
 			if (ff == null || ff.dirMax == null) return;
 			const eirp = ff.dirMax * pStim;
 			this.find_element('peak-eirp').innerHTML = pwr.formatEirp(eirp, 1);
-			this.find_element('directivity-max').innerHTML =
-				`Directivity: ${(10*Math.log10(ff.dirMax)).toFixed(1)} dB, EIRP: ${pwr.formatEirp(eirp, 1)}`;
+			this.plotFF.set_title_metrics(
+				`Directivity: ${(10*Math.log10(ff.dirMax)).toFixed(1)} dB, EIRP: ${pwr.formatEirp(eirp, 1)}`
+			);
 		};
 		this.farfieldControl.add_max_monitor('directivity', (v) => {
 			let idir = this.farfieldControl.ff.idealDirectivity;

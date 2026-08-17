@@ -15,6 +15,7 @@
 	<meta property="og:title" content="Phased Array Visualizer" />
 	<meta property="og:description" content="Phased array visualizer by Jason Durbin." />
 	<meta property="og:image" content="./assets/favicon.png" />
+	<script src="https://cdn.plot.ly/plotly-cartesian-3.7.0.min.js"></script>
 	<script type="module" src="./js/index.js" defer></script>
 
 	<!-- Matomo -->
@@ -141,9 +142,8 @@
 		<main class="main">
 			<section class="results-grid">
 				<div class="canvas-container plot-farfield">
-					<div class="canvas-header"><h2>2-D Radiation Pattern</h2><span id="pa-directivity-max">&nbsp;</span></div>
 					<div class="canvas-wrapper">
-						<canvas id="pa-farfield-canvas-2d"></canvas>
+						<div id="pa-farfield-plot-2d"></div>
 					</div>
 					<div class="canvas-footer">
 						<div class="footer-group">
