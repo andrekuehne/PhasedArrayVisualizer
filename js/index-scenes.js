@@ -8,6 +8,7 @@ import {GeometryViews} from "./phasedarray/geometry-views.js"
 import {SteeringDomains} from "./phasedarray/steering.js"
 import {Illuminations} from "./phasedarray/illumination.js"
 import {Tapers} from "./phasedarray/tapers.js"
+import {defaultWatts, formatPower, formatPowerValue, isPowerScope, isPowerUnit, wattsFrom} from "./phasedarray/power.js"
 import {linspace} from "./util.js";
 /** @import { SceneQueue } from "./scene/scene-queue.js" */
 
@@ -49,6 +50,7 @@ export class SceneControlPhasedArray extends SceneControl{
 		this.taperControl = new SceneControlAllTapers(this);
 		this.steerControl = new SceneControlSteeringDomain(this);
 		this.illumControl = new SceneControlIllumination(this);
+		this.powerControl = new SceneControlPower(this);
 		this.add_event_types(
 			'phased-array-changed',
 			'phased-array-phase-changed',
@@ -466,6 +468,137 @@ export class SceneControlSteeringDomain extends SceneControlWithSelector{
 		this.clear_changed('theta', 'phi', 'steering-domain');
 		return [obj.theta_deg, obj.phi_deg];
 	}
+}
+
+export class SceneControlPower extends SceneControl{
+	static autoUpdateURL = false;
+	constructor(parent){
+		super(parent, ['power', 'power-unit', 'power-scope', 'eirp-unit']);
+		this._updating = false;
+		this.enteredWatts = defaultWatts();
+		this.unit = 'dBm';
+		this.scope = 'element';
+		this.eirpUnit = 'dBW';
+		this._scopeRadios = {
+			element: document.getElementById(this.prepend + '-power-scope-element'),
+			array: document.getElementById(this.prepend + '-power-scope-array'),
+		};
+		this.add_event_types('power-changed');
+		this.addEventListener('scene-loaded', () => { this.load_from_dom(); });
+		this.addEventListener('reset', () => { this.apply_defaults(); });
+		for (const radio of Object.values(this._scopeRadios)){
+			if (radio === null) continue;
+			radio.addEventListener('change', () => {
+				if (this._updating || !radio.checked) return;
+				this.find_element('power-scope').value = radio.value;
+				this.find_element('power-scope').dispatchEvent(new Event('change'));
+			});
+		}
+	}
+	control_changed(key){
+		if (this._updating) return;
+		super.control_changed(key);
+		if (key === 'power'){
+			const raw = String(this.find_element('power').value).trim();
+			if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
+			const watts = wattsFrom(raw, this.unit);
+			if (!Number.isFinite(watts) || watts < 0) return;
+			this.enteredWatts = watts;
+			this.trigger_event('power-changed');
+			return;
+		}
+		if (key === 'power-unit'){
+			const u = this.find_element('power-unit').value;
+			if (!isPowerUnit(u)) return;
+			this.unit = u;
+			this.write_power_field();
+			this.trigger_event('power-changed');
+			return;
+		}
+		if (key === 'power-scope'){
+			const next = this.find_element('power-scope').value;
+			if (!isPowerScope(next) || next === this.scope){
+				this.sync_scope_radios();
+				return;
+			}
+			const wsum = this.powerWeightSum();
+			if (this.scope === 'element' && next === 'array') this.enteredWatts *= wsum;
+			else if (this.scope === 'array' && next === 'element' && wsum > 0) this.enteredWatts /= wsum;
+			this.scope = next;
+			this.sync_scope_radios();
+			this.write_power_field();
+			this.trigger_event('power-changed');
+			return;
+		}
+		if (key === 'eirp-unit'){
+			const u = this.find_element('eirp-unit').value;
+			if (!isPowerUnit(u)) return;
+			this.eirpUnit = u;
+			this.trigger_event('power-changed');
+		}
+	}
+	powerWeightSum(){
+		const pa = this.parent.pa;
+		if (pa === null || pa === undefined) return 1;
+		const s = pa.powerWeightSum;
+		if (!Number.isFinite(s) || s <= 0) return 1;
+		return s;
+	}
+	write_power_field(){
+		this._updating = true;
+		this.find_element('power').value = formatPowerValue(this.enteredWatts, this.unit);
+		this._updating = false;
+	}
+	write_all_fields(){
+		this._updating = true;
+		this.find_element('power').value = formatPowerValue(this.enteredWatts, this.unit);
+		this.find_element('power-unit').value = this.unit;
+		this.find_element('power-scope').value = this.scope;
+		this.find_element('eirp-unit').value = this.eirpUnit;
+		this.sync_scope_radios();
+		this._updating = false;
+	}
+	sync_scope_radios(){
+		const radio = this._scopeRadios[this.scope];
+		if (radio !== undefined && radio !== null) radio.checked = true;
+	}
+	load_from_dom(){
+		const unit = this.find_element('power-unit').value;
+		this.unit = isPowerUnit(unit) ? unit : 'dBm';
+		const eirpUnit = this.find_element('eirp-unit').value;
+		this.eirpUnit = isPowerUnit(eirpUnit) ? eirpUnit : 'dBW';
+		const scope = this.find_element('power-scope').value;
+		this.scope = isPowerScope(scope) ? scope : 'element';
+		let watts = wattsFrom(this.find_element('power').value, this.unit);
+		if (!Number.isFinite(watts) || watts < 0) watts = defaultWatts();
+		this.enteredWatts = watts;
+		this.write_all_fields();
+	}
+	apply_defaults(){
+		this.enteredWatts = defaultWatts();
+		this.unit = 'dBm';
+		this.scope = 'element';
+		this.eirpUnit = 'dBW';
+		this.write_all_fields();
+	}
+	/**
+	 * Full-scale per-element power in watts.
+	 * If the user entered total array power, this is P_tot / Σ|a_i|².
+	 */
+	getWatts(){
+		if (this.scope !== 'array') return this.enteredWatts;
+		const wsum = this.powerWeightSum();
+		if (wsum <= 0) return 0;
+		return this.enteredWatts / wsum;
+	}
+	getArrayWatts(){
+		if (this.scope === 'array') return this.enteredWatts;
+		return this.enteredWatts * this.powerWeightSum();
+	}
+	getUnit(){ return this.unit; }
+	getEirpUnit(){ return this.eirpUnit; }
+	format(watts, decimals){ return formatPower(watts, this.unit, decimals); }
+	formatEirp(watts, decimals){ return formatPower(watts, this.eirpUnit, decimals); }
 }
 
 export class SceneControlIllumination extends SceneControlWithSelectorAutoBuild{

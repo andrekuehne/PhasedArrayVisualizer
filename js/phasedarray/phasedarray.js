@@ -45,6 +45,7 @@ export class PhasedArray{
 
 		this.requestUpdate = true;
 		this.illum = null;
+		this.powerWeightSum = 0;
 	}
 	set_theta_phi(theta, phi){
 		this.theta = Number(theta);
@@ -183,6 +184,7 @@ export class PhasedArray{
 	quantize_attenuation(bits, lsb){
 		const maxQ = lsb*(2**bits - 1);
 		const maxV = Math.max(...this.vRequestedMag);
+		let powerWeightSum = 0;
 		for (let i = 0; i < this.geometry.length; i++){
 			let m = this.vRequestedMag[i]/maxV;
 			let a = -20*Math.log10(Math.abs(m));
@@ -193,7 +195,32 @@ export class PhasedArray{
 				else this.vQuantizeMag[i] = 10**(-a/20.0);
 			}
 			this.vFarfieldMag[i] = this.vQuantizeMag[i] * this.vIllumMag[i];
+			const q = this.vQuantizeMag[i];
+			powerWeightSum += q * q;
 		}
+		this.powerWeightSum = powerWeightSum;
+	}
+	/**
+	* Power delivered to element `i` in watts, given full-scale per-antenna power.
+	*
+	* @param {Number} pAnt Full-scale per-antenna power (W)
+	* @param {Number} i Element index
+	*
+	* @return {Number}
+	*/
+	elementPowerWatts(pAnt, i){
+		const m = this.vQuantizeMag[i];
+		return Number(pAnt) * m * m;
+	}
+	/**
+	* Total power sent into the array in watts, given full-scale per-antenna power.
+	*
+	* @param {Number} pAnt Full-scale per-antenna power (W)
+	*
+	* @return {Number}
+	*/
+	totalPowerWatts(pAnt){
+		return Number(pAnt) * this.powerWeightSum;
 	}
 	create_farfield_vectors(freq_scale){
 		const pha = new Float32Array(this.size);

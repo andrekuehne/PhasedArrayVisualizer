@@ -109,6 +109,13 @@ export class ScenePlotFarfield2D extends ScenePlotABC{
 				const ff1 = 10*Math.log10(ff.farfield_total[ip][it]/ff.maxValue);
 				const ff2 = ff1 + 10*Math.log10(ff.dirMax);
 				text = `(${x.toFixed(2)}, ${y.toFixed(2)}): ${ff2.toFixed(2)} dBi (${ff1.toFixed(2)} dB)`;
+				const arrayControl = this.parent.arrayControl;
+				const pwr = (arrayControl === undefined) ? undefined : arrayControl.powerControl;
+				const pa = (arrayControl === undefined) ? null : arrayControl.pa;
+				if (pwr !== undefined && pa !== null && pa !== undefined && ff.maxValue > 0){
+					const eirp = (ff.farfield_total[ip][it] / ff.maxValue) * ff.dirMax * pa.totalPowerWatts(pwr.getWatts());
+					text += `, EIRP: ${pwr.formatEirp(eirp)}`;
+				}
 			}
 		}
 		canvas.hover_container.innerHTML = text;

@@ -57,6 +57,7 @@ export class ScenePlot2DGeometryABC extends ScenePlotABC{
 	* @return {null}
 	* */
 	bind_phased_array_scene(scene){
+		this.arrayControl = scene;
 		scene.addEventListener('phased-array-changed', (pa) => this.load_phased_array(pa));
 	}
 	draw(data){
@@ -309,7 +310,12 @@ export class ScenePlot2DGeometryGeneric extends ScenePlot2DGeometryABC{
 		this.install_scale_control(inp_scale);
 		this.install_hover_item((i) => {
 			if (this.active_view === null || this.active_unit == null || this.pa == null) return "";
-			return this.active_unit.string_from_view(this.active_view, this.pa, i);
+			let t = this.active_unit.string_from_view(this.active_view, this.pa, i);
+			const pwr = (this.arrayControl === undefined) ? undefined : this.arrayControl.powerControl;
+			if (pwr !== undefined){
+				t += `, ${pwr.format(this.pa.elementPowerWatts(pwr.getWatts(), i))}`;
+			}
+			return t;
 		});
 	}
 	/**

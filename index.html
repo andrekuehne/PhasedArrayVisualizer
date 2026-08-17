@@ -42,6 +42,7 @@
 	</div>
 	<input type="text" id="pa-atten-manual" hidden />
 	<input type="text" id="pa-phase-manual" hidden />
+	<input type="text" id="pa-power-scope" hidden value="element" />
 	<div class="text-group">
 		<div class="pa-settings">
 			<div id="pa-geometry-controls">
@@ -88,6 +89,32 @@
 				</div>
 				<div class="form-group" style="font-size:0.7em;font-style: italic;">
 					0 bits would be no quantization.
+				</div>
+			</div>
+			<div>
+				<h3>Power</h3>
+				<div class="form-group" id="pa-power-div">
+					<label for="pa-power">Power</label>
+					<input type="number" value="20" step="any" id="pa-power" name="pa-power" />
+					<select id="pa-power-unit" name="pa-power-unit" class="unit-select">
+						<option>mW</option>
+						<option>W</option>
+						<option selected>dBm</option>
+						<option>dBW</option>
+					</select>
+				</div>
+				<div class="radio-row" id="pa-power-scope-div">
+					<label><input type="radio" name="pa-power-scope-radio" id="pa-power-scope-element" value="element" checked /> Per-element</label>
+					<label><input type="radio" name="pa-power-scope-radio" id="pa-power-scope-array" value="array" /> Array</label>
+				</div>
+				<div class="form-group" id="pa-eirp-unit-div">
+					<label for="pa-eirp-unit">EIRP Unit</label>
+					<select id="pa-eirp-unit" name="pa-eirp-unit" class="unit-select">
+						<option>mW</option>
+						<option>W</option>
+						<option>dBm</option>
+						<option selected>dBW</option>
+					</select>
 				</div>
 			</div>
 			<div id="pa-illumination-controls">
@@ -154,6 +181,8 @@
 			<tr><td>Ideal Directivity</td><td id="pa-ideal-directivity"></span></td></tr>
 			<tr><td>Calculated Directivity</td><td id="pa-calc-directivity"></span></td></tr>
 			<tr><td>Aperture Efficiency</td><td id="pa-aperture-efficiency"></span></td></tr>
+			<tr><td>Array Power</td><td id="pa-array-power"></span></td></tr>
+			<tr><td>Peak EIRP</td><td id="pa-peak-eirp"></span></td></tr>
 			<tr><td>Area</td><td id="pa-calc-area"></span></td></tr>
 			<tr><td>Elements</td><td id="pa-element-count"></span></td></tr>
 		</table>
@@ -208,6 +237,7 @@
 			<li>The mesh can be made finer by increasing theta/phi, u/v, or az/el points. However, increasing the number of points may result in laggy performance.</li>
 			<li>Clicking (or long pressing) elements in the phase/attenuation plots allows you to manually set phase/attenuation. <b>Be sure to select "enable override."</b> Additionally, the attenuation pop-up allows you to disable elements.</li>
 			<li>Hovering (or touching) the 2-D farfield plot or geometry plots will show the value of the plot under the cursor.</li>
+			<li><strong id="help-power">Power</strong> [new Aug. 2026] is either full-scale per-element drive or total array power. Taper, manual attenuation, and quantization scale each element by |a<sub>i</sub>|<sup>2</sup>. If total array power is selected, per-element power is P<sub>tot</sub> / Σ|a<sub>i</sub>|<sup>2</sup>. EIRP is directivity times total array power, shown in the EIRP unit.</li>
 			<li><strong id="help-illumination">Illumination</strong> [new Aug. 2026] can be used to estimate different types of arrays. For example, a reflectarray would use a spherical wave, traveling waves would use guided wave, etc.</li>
 		</ul>
 		<h2>Commercial Use</h2>
