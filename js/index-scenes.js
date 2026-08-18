@@ -537,7 +537,7 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 	constructor(parent, key){
 		super(parent, key, FarfieldDomains);
 		this.ff = null;
-		this.validMaxMonitors = new Set(['directivity', 'ideal-directivity', 'pattern-metrics']);
+		this.validMaxMonitors = new Set(['directivity', 'pattern-metrics']);
 		this.maxMonitors = {};
 		this.add_event_types('farfield-changed', 'farfield-calculation-complete');
 	}
@@ -592,7 +592,6 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 				for (const [key, value] of Object.entries(this.maxMonitors)){
 					let val;
 					if (key == 'directivity') val = this.ff.dirMax;
-					else if (key == "ideal-directivity") val = this.ff.idealDirectivity;
 					else if (key == 'pattern-metrics') val = this.ff.patternMetrics;
 					else throw Error(`Unknown max key ${key}.`)
 					value.forEach((e) => e(val));

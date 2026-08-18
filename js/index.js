@@ -111,32 +111,40 @@ export class PhasedArrayScene extends SceneParent{
 			const pAvail = pa.availablePowerWatts(pAnt);
 			const pStim = pa.totalPowerWatts(pAnt);
 			const matched = pa.coupling === 'matched';
-			const gamma = matched ? Number(pa.reflectionGamma) || 0 : 0;
-			const pRef = matched ? pStim * gamma : 0;
-			const pAcc = matched ? pStim * (1 - gamma) : pStim;
+			const pAcc = pa.acceptedPowerWatts(pAnt);
+			const pRef = matched ? pStim - pAcc : 0;
 			this.find_element('available-power').innerHTML = pwr.formatEirp(pAvail, 1);
 			this.find_element('stimulated-power').innerHTML = pwr.formatEirp(pStim, 1);
 			this.find_element('reflected-power').innerHTML = matched ? pwr.formatEirp(pRef, 1) : '—';
 			this.find_element('accepted-power').innerHTML = matched ? pwr.formatEirp(pAcc, 1) : '—';
-			const util = pAvail > 0 ? pStim / pAvail : 0;
+			const pUsed = matched ? pAcc : pStim;
+			const util = pAvail > 0 ? pUsed / pAvail : 0;
 			const utilDb = util > 0 ? (10 * Math.log10(util)).toFixed(1) : '-Inf';
 			this.find_element('power-utilization').innerHTML = `${(util * 100).toFixed(1)} % (${utilDb} dB)`;
 			const ff = this.farfieldControl.ff;
 			if (ff == null || ff.dirMax == null) return;
 			const eirp = ff.dirMax * pAcc;
+			const gReal = pa.realizedGain(ff.dirMax);
+			this.find_element('realized-gain').innerHTML = Number.isFinite(gReal) && gReal > 0
+				? `${(10 * Math.log10(gReal)).toFixed(1)} dB`
+				: '—';
+			const idir = ff.idealDirectivity;
+			if (Number.isFinite(gReal) && gReal > 0 && Number.isFinite(idir) && idir > 0){
+				const eta = gReal / idir;
+				this.find_element('aperture-efficiency').innerHTML =
+					`${(eta * 100).toFixed(1)} % (${(10 * Math.log10(eta)).toFixed(1)} dB)`;
+			}
+			else{
+				this.find_element('aperture-efficiency').innerHTML = '—';
+			}
 			this.find_element('peak-eirp').innerHTML = pwr.formatEirp(eirp, 1);
 			this.plotFF.set_title_metrics(
 				`Directivity: ${(10*Math.log10(ff.dirMax)).toFixed(1)} dB, EIRP: ${pwr.formatEirp(eirp, 1)}`
 			);
 		};
 		this.farfieldControl.add_max_monitor('directivity', (v) => {
-			let idir = this.farfieldControl.ff.idealDirectivity;
 			this.find_element('calc-directivity').innerHTML = `${(10*Math.log10(v)).toFixed(1)} dB`
-			this.find_element('aperture-efficiency').innerHTML = `${((v / idir) * 100).toFixed(1)} % (${(10 * Math.log10(v / idir)).toFixed(1)} dB)`
 			update_power_displays();
-		});
-		this.farfieldControl.add_max_monitor('ideal-directivity', (v) => {
-			this.find_element('ideal-directivity').innerHTML = `${(10 * Math.log10(v)).toFixed(1)} dB`
 		});
 		this.farfieldControl.add_max_monitor('pattern-metrics', (m) => {
 			this.update_pattern_metrics_display(m);

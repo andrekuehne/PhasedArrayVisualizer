@@ -619,7 +619,7 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 		const pwr = (arrayControl === undefined) ? undefined : arrayControl.powerControl;
 		const pa = (arrayControl === undefined) ? null : arrayControl.pa;
 		if (pwr !== undefined && pa != null){
-			const eirp = (total / ff.maxValue) * ff.dirMax * pa.totalPowerWatts(pwr.getWatts());
+			const eirp = (total / ff.maxValue) * ff.dirMax * pa.acceptedPowerWatts(pwr.getWatts());
 			text += `<br>EIRP: ${pwr.formatEirp(eirp)}`;
 		}
 		return text;

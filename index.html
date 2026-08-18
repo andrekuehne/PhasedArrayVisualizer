@@ -205,12 +205,12 @@
 								<h3>Aperture</h3>
 								<table class="metric-table">
 									<tr>
-										<td>Ideal Directivity</td>
-										<td id="pa-ideal-directivity" class="metric-value"></td>
-									</tr>
-									<tr>
 										<td>Calculated Directivity</td>
 										<td id="pa-calc-directivity" class="metric-value"></td>
+									</tr>
+									<tr>
+										<td>Realized Gain</td>
+										<td id="pa-realized-gain" class="metric-value"></td>
 									</tr>
 									<tr>
 										<td>Aperture Efficiency</td>
@@ -379,11 +379,11 @@
 					<p>This demo was created by <a href="https://github.com/jasondurbin" target="_blank">Jason Durbin</a>, who is <a href="https://www.linkedin.com/in/jasondurbin/" target="_blank">currently an antenna engineer at Amazon Leo</a>.
 					<h2>Usage and Notes</h2>
 					<ul>
-						<li><strong id="help-element">Element</strong> [new Aug. 2026] defaults to isotropic over the front hemisphere, so calculated directivity is about +3 dBi for a uniform pattern. The Element section can instead apply a cos<sup>n</sup> power pattern: you set the peak broadside gain in dBi (minimum 3.01 dBi, i.e. 10·log<sub>10</sub>2), and n = 10<sup>(G/10)</sup>/2 − 1 is chosen so the pattern conserves power. Cos<sup>n</sup> is zero behind the array, so U/V samples outside the unit circle are dark. That pattern multiplies the array-factor intensity before directivity, EIRP, and beam metrics. Aperture efficiency uses the geometric aperture bound 4πA/λ<sup>2</sup> and can exceed 100% for small arrays with a directive element.</li>
+						<li><strong id="help-element">Element</strong> [new Aug. 2026] defaults to isotropic over the front hemisphere, so calculated directivity is about +3 dBi for a uniform pattern. The Element section can instead apply a cos<sup>n</sup> power pattern: you set the peak broadside gain in dBi (minimum 3.01 dBi, i.e. 10·log<sub>10</sub>2), and n = 10<sup>(G/10)</sup>/2 − 1 is chosen so the pattern conserves power. Cos<sup>n</sup> is zero behind the array, so U/V samples outside the unit circle are dark. That pattern multiplies the array-factor intensity before directivity, EIRP, and beam metrics. Realized gain is directivity × accepted/stimulated, so it includes mismatch when Coupling is Matched. Aperture efficiency is realized gain over the geometric bound 4πA/λ<sup>2</sup> and can exceed 100% for small arrays with a directive element.</li>
 						<li>The mesh can be made finer by increasing Points. However, increasing the number of points may result in laggy performance.</li>
 						<li>Clicking (or long pressing) elements in the phase/attenuation plots allows you to manually set phase/attenuation. <b>Be sure to select "enable override."</b> Additionally, the attenuation pop-up allows you to disable elements.</li>
 						<li>Hovering (or touching) the 2-D farfield plot or geometry plots will show the value of the plot under the cursor.</li>
-						<li><strong id="help-power">Power</strong> [new Aug. 2026] is either full-scale per-element drive or total array power. Taper, manual attenuation, and quantization scale each element by |a<sub>i</sub>|<sup>2</sup>. Available power is N times full-scale per-element drive. Stimulated (used) power is P<sub>ant</sub> Σ|a<sub>i</sub>|<sup>2</sup>. Power utilization is stimulated/available, shown as % and dB. If total array power is selected, per-element power is P<sub>tot</sub> / Σ|a<sub>i</sub>|<sup>2</sup>. EIRP is directivity times stimulated power. Power metrics and EIRP use the EIRP unit.</li>
+						<li><strong id="help-power">Power</strong> [new Aug. 2026] is either full-scale per-element drive or total array power. Taper, manual attenuation, and quantization scale each element by |a<sub>i</sub>|<sup>2</sup>. Available power is N times full-scale per-element drive. Stimulated (used) power is P<sub>ant</sub> Σ|a<sub>i</sub>|<sup>2</sup>. When Coupling is Isolated, power utilization is stimulated/available. When Matched, accepted power is stimulated × (1 − Γ) from the estimated S-matrix, and utilization is accepted/available. If total array power is selected, per-element power is P<sub>tot</sub> / Σ|a<sub>i</sub>|<sup>2</sup>. EIRP is directivity times accepted power (equivalently realized gain times stimulated). Power metrics and EIRP use the EIRP unit.</li>
 						<li><strong id="help-illumination">Illumination</strong> [new Aug. 2026] can be used to estimate different types of arrays. For example, a reflectarray would use a spherical wave, traveling waves would use guided wave, etc.</li>
 					</ul>
 					<h2>Commercial Use</h2>

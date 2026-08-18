@@ -282,6 +282,33 @@ export class PhasedArray{
 	availablePowerWatts(pAnt){
 		return Number(pAnt) * this.geometry.length;
 	}
+	/**
+	* Accepted power in watts: stimulated × (1 − Γ) when Matched, else stimulated.
+	*
+	* @param {Number} pAnt Full-scale per-antenna power (W)
+	*
+	* @return {Number}
+	*/
+	acceptedPowerWatts(pAnt){
+		const pStim = this.totalPowerWatts(pAnt);
+		if (this.coupling !== 'matched') return pStim;
+		const gamma = Number(this.reflectionGamma) || 0;
+		return pStim * (1 - gamma);
+	}
+	/**
+	* IEEE realized gain: directivity × accepted/stimulated (Isolated: dirMax).
+	*
+	* @param {Number} dirMax Peak directivity (linear)
+	*
+	* @return {Number}
+	*/
+	realizedGain(dirMax){
+		const d = Number(dirMax);
+		if (!Number.isFinite(d)) return NaN;
+		if (this.coupling !== 'matched') return d;
+		const gamma = Number(this.reflectionGamma) || 0;
+		return d * (1 - gamma);
+	}
 	create_farfield_vectors(freq_scale){
 		const n = this.size;
 		const twoPi = 2 * Math.PI;
