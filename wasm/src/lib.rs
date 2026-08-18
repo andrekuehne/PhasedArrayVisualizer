@@ -1,6 +1,7 @@
 mod bessel;
 mod element;
 mod kernel;
+mod match_s;
 mod metrics;
 mod prad;
 mod quadrature;
@@ -141,6 +142,30 @@ impl RadiatedPowerKernel {
 
 	pub fn take_im(&self) -> Vec<f32> {
 		self.state.p_im.clone()
+	}
+
+	pub fn form_matched_s(&mut self, z_ref: f32) {
+		self.state.form_matched_s(z_ref);
+	}
+
+	pub fn take_z0(&self) -> Vec<f64> {
+		self.state.z0.clone()
+	}
+
+	pub fn take_s_re(&self) -> Vec<f64> {
+		self.state.s_re.clone()
+	}
+
+	pub fn take_s_im(&self) -> Vec<f64> {
+		self.state.s_im.clone()
+	}
+
+	pub fn match_iterations(&self) -> u32 {
+		self.state.match_iterations
+	}
+
+	pub fn match_residual(&self) -> f64 {
+		self.state.match_residual
 	}
 
 	pub fn n_samples(&self) -> u32 {

@@ -60,12 +60,18 @@ export class RadiatedPowerKernel {
     fill_isolated(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number): void;
     fill_isolated_range(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number, sample0: number, sample_count: number): void;
     form_gram(): void;
+    form_matched_s(z_ref: number): void;
+    match_iterations(): number;
+    match_residual(): number;
     n_elements(): number;
     n_samples(): number;
     constructor();
     set_quadrature(n_mu: number, n_phi: number): void;
     take_im(): Float32Array;
     take_re(): Float32Array;
+    take_s_im(): Float64Array;
+    take_s_re(): Float64Array;
+    take_z0(): Float64Array;
 }
 
 /**
@@ -166,12 +172,18 @@ export interface InitOutput {
     readonly radiatedpowerkernel_fill_isolated: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
     readonly radiatedpowerkernel_fill_isolated_range: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
     readonly radiatedpowerkernel_form_gram: (a: number) => void;
+    readonly radiatedpowerkernel_form_matched_s: (a: number, b: number) => void;
+    readonly radiatedpowerkernel_match_iterations: (a: number) => number;
+    readonly radiatedpowerkernel_match_residual: (a: number) => number;
     readonly radiatedpowerkernel_n_elements: (a: number) => number;
     readonly radiatedpowerkernel_n_samples: (a: number) => number;
     readonly radiatedpowerkernel_new: () => number;
     readonly radiatedpowerkernel_set_quadrature: (a: number, b: number, c: number) => void;
     readonly radiatedpowerkernel_take_im: (a: number) => [number, number];
     readonly radiatedpowerkernel_take_re: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_s_im: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_s_re: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_z0: (a: number) => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;

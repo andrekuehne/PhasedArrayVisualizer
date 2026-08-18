@@ -5,6 +5,7 @@
 
 use crate::bessel::j0f;
 use crate::element::{PATTERN_COS_N, PATTERN_ISOTROPIC};
+use crate::match_s::MatchedS;
 use crate::quadrature::HemisphereQuad;
 use crate::sincos::{load4, sincos_f32x4, store4};
 use std::collections::HashMap;
@@ -47,6 +48,13 @@ pub struct PradState {
 	pub p_re: Vec<f32>,
 	pub p_im: Vec<f32>,
 	pub n_unique_rho: usize,
+	pub z0: Vec<f64>,
+	pub r_re: Vec<f64>,
+	pub r_im: Vec<f64>,
+	pub s_re: Vec<f64>,
+	pub s_im: Vec<f64>,
+	pub match_iterations: u32,
+	pub match_residual: f64,
 }
 
 impl PradState {
@@ -61,6 +69,13 @@ impl PradState {
 			p_re: Vec::new(),
 			p_im: Vec::new(),
 			n_unique_rho: 0,
+			z0: Vec::new(),
+			r_re: Vec::new(),
+			r_im: Vec::new(),
+			s_re: Vec::new(),
+			s_im: Vec::new(),
+			match_iterations: 0,
+			match_residual: 0.0,
 		}
 	}
 
@@ -238,6 +253,33 @@ impl PradState {
 			}
 		}
 		self.n_unique_rho = cache.len();
+	}
+
+	fn clear_matched(&mut self) {
+		self.z0.clear();
+		self.r_re.clear();
+		self.r_im.clear();
+		self.s_re.clear();
+		self.s_im.clear();
+		self.match_iterations = 0;
+		self.match_residual = 0.0;
+	}
+
+	/// \(R = 2 Z_\mathrm{ref} P_H\), simultaneous real match, power-wave \(S\).
+	/// Uses the current Gram; does not fill \(A\).
+	pub fn form_matched_s(&mut self, z_ref: f32) {
+		if self.n == 0 || self.p_re.len() != self.n * self.n {
+			self.clear_matched();
+			return;
+		}
+		let m = MatchedS::from_gram(&self.p_re, &self.p_im, self.n, z_ref as f64);
+		self.z0 = m.z0;
+		self.r_re = m.r_re;
+		self.r_im = m.r_im;
+		self.s_re = m.s_re;
+		self.s_im = m.s_im;
+		self.match_iterations = m.iterations;
+		self.match_residual = m.residual;
 	}
 }
 
@@ -677,5 +719,64 @@ mod tests {
 		close(j0.p_re[0], P0, 2e-6, "J0 P11 lattice");
 		let dre = max_abs(&j0.p_re, &prod.p_re);
 		assert!(dre < 2e-3, "8x8 J0 vs product max|Δre|={dre}");
+	}
+
+	fn close64(a: f64, b: f64, tol: f64, label: &str) {
+		assert!(
+			(a - b).abs() <= tol,
+			"{label}: {a} vs {b} (tol {tol})"
+		);
+	}
+
+	#[test]
+	fn j0_n1_matched_s_is_open() {
+		use crate::match_s::{TAU, Z_REF};
+		let mut s = PradState::new();
+		s.set_quadrature(8, 2);
+		s.compute_j0(&[0.0], &[0.0], 1.0, PATTERN_ISOTROPIC, 0.0);
+		s.form_matched_s(Z_REF as f32);
+		close64(s.r_re[0], Z_REF, 1e-5, "R11");
+		close64(s.z0[0], Z_REF, 1e-6, "z0");
+		close64(s.s_re[0], 0.0, 1e-9, "S11 re");
+		close64(s.s_im[0], 0.0, 1e-12, "S11 im");
+		assert!(s.match_residual < TAU, "residual {}", s.match_residual);
+	}
+
+	#[test]
+	fn j0_far_pair_weak_coupling() {
+		use crate::match_s::{TAU, Z_REF};
+		let mut s = PradState::new();
+		s.set_quadrature(48, 2);
+		s.compute_j0(&[0.0, 20.0], &[0.0, 0.0], 1.0, PATTERN_ISOTROPIC, 0.0);
+		s.form_matched_s(Z_REF as f32);
+		close64(s.z0[0], Z_REF, 1.0, "z0_1 ~ 50");
+		close64(s.z0[1], Z_REF, 1.0, "z0_2 ~ 50");
+		assert!(s.match_residual < TAU, "residual {}", s.match_residual);
+		let mag12 = (s.s_re[1] * s.s_re[1] + s.s_im[1] * s.s_im[1]).sqrt();
+		assert!(mag12 < 0.1, "|S12|={mag12}");
+		close64(s.s_re[0], 0.0, 2e-3, "S11");
+		close64(s.s_re[3], 0.0, 2e-3, "S22");
+	}
+
+	#[test]
+	fn j0_three_element_s_symmetric_and_matched() {
+		use crate::match_s::{TAU, Z_REF};
+		let mut s = PradState::new();
+		s.set_quadrature(24, 2);
+		s.compute_j0(&[0.0, 0.5, 1.0], &[0.0, 0.25, -0.25], 1.0, PATTERN_ISOTROPIC, 0.0);
+		s.form_matched_s(Z_REF as f32);
+		let n = 3;
+		assert!(s.match_residual < TAU, "residual {}", s.match_residual);
+		for p in 0..n {
+			let mag_ii = (s.s_re[p * n + p] * s.s_re[p * n + p]
+				+ s.s_im[p * n + p] * s.s_im[p * n + p])
+				.sqrt();
+			assert!(mag_ii < 2e-3, "|S{p}{p}|={mag_ii}");
+			for q in 0..n {
+				close64(s.s_re[p * n + q], s.s_re[q * n + p], 1e-9, "S re symmetric");
+				close64(s.s_im[p * n + q], s.s_im[q * n + p], 1e-9, "S im symmetric");
+				close64(s.s_im[p * n + q], 0.0, 1e-8, "S im ~ 0");
+			}
+		}
 	}
 }

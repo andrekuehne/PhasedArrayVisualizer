@@ -575,6 +575,26 @@ export class RadiatedPowerKernel {
         wasm.radiatedpowerkernel_form_gram(this.__wbg_ptr);
     }
     /**
+     * @param {number} z_ref
+     */
+    form_matched_s(z_ref) {
+        wasm.radiatedpowerkernel_form_matched_s(this.__wbg_ptr, z_ref);
+    }
+    /**
+     * @returns {number}
+     */
+    match_iterations() {
+        const ret = wasm.radiatedpowerkernel_match_iterations(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    match_residual() {
+        const ret = wasm.radiatedpowerkernel_match_residual(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * @returns {number}
      */
     n_elements() {
@@ -617,6 +637,33 @@ export class RadiatedPowerKernel {
         const ret = wasm.radiatedpowerkernel_take_re(this.__wbg_ptr);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    take_s_im() {
+        const ret = wasm.radiatedpowerkernel_take_s_im(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    take_s_re() {
+        const ret = wasm.radiatedpowerkernel_take_s_re(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    take_z0() {
+        const ret = wasm.radiatedpowerkernel_take_z0(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
         return v1;
     }
 }
@@ -715,6 +762,11 @@ function getArrayF32FromWasm0(ptr, len) {
     return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
 }
 
+function getArrayF64FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat64ArrayMemory0().subarray(ptr / 8, ptr / 8 + len);
+}
+
 function getArrayU8FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
@@ -726,6 +778,14 @@ function getFloat32ArrayMemory0() {
         cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
     }
     return cachedFloat32ArrayMemory0;
+}
+
+let cachedFloat64ArrayMemory0 = null;
+function getFloat64ArrayMemory0() {
+    if (cachedFloat64ArrayMemory0 === null || cachedFloat64ArrayMemory0.byteLength === 0) {
+        cachedFloat64ArrayMemory0 = new Float64Array(wasm.memory.buffer);
+    }
+    return cachedFloat64ArrayMemory0;
 }
 
 function getStringFromWasm0(ptr, len) {
@@ -769,6 +829,7 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedFloat32ArrayMemory0 = null;
+    cachedFloat64ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;

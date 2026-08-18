@@ -1,6 +1,6 @@
 # Radiated-power Gram (WASM status)
 
-Handoff for [approximate_matched_basis.md](approximate_matched_basis.md). **§5 is implemented** two ways: the general φ-dependent product kernel, and an axisymmetric \(J_0\) fast path. Isolated fields from array geometry plus the existing element factor, then the Hermitian radiated-power matrix \(P_H\). Match, \(S\), \(T\), and \(F^\mathrm{emb}\) are not started. There is no visualizer UI.
+Handoff for [approximate_matched_basis.md](approximate_matched_basis.md). **§5–8 are implemented**: isolated fields → Hermitian \(P_H\) (φ-dependent product kernel and axisymmetric \(J_0\) fast path), then \(R = 2 Z_\mathrm{ref} P_H\), simultaneous real \(z_0\) match, and power-wave \(S\). \(T\) and \(F^\mathrm{emb}\) are not started. There is no visualizer UI.
 
 Intent: keep the **φ-dependent** product quadrature as the general kernel (needed later for rotated / polarized patterns). Do not auto-switch `compute()` or `runPradJob` to J0. Use `compute_j0` only for planar axisymmetric \(D(\mu)\).
 
@@ -62,11 +62,13 @@ where \(D_\lambda\) is the array electrical diameter in wavelengths.
 | [wasm/src/quadrature.rs](../wasm/src/quadrature.rs) | Gauss–Legendre + `HemisphereQuad` (1-D μ kept for J0) |
 | [wasm/src/bessel.rs](../wasm/src/bessel.rs) | f32 \(J_0\) (fdlibm `j0f`) |
 | [wasm/src/prad.rs](../wasm/src/prad.rs) | Isolated \(A\), blocked Hermitian Gram, `P0`, J0 unique-ρ Gram |
+| [wasm/src/match_s.rs](../wasm/src/match_s.rs) | f64 \(R\), real \(z_0\) match, power-wave \(S\) (custom Cholesky) |
 | [wasm/src/lib.rs](../wasm/src/lib.rs) | `RadiatedPowerKernel` wasm-bindgen |
 | [js/wasm/farfield-worker.js](../js/wasm/farfield-worker.js) | Same worker: far-field tiles **and** `run_prad` panels. Browser Dedicated Worker or Node `worker_threads` |
 | [js/wasm/farfield-pool.js](../js/wasm/farfield-pool.js) | `runPradJob`, `mergeGrams`, `pradWorkerCount`, `stopFarfieldPool`; Node can pass `{Worker, wasmPath, workers}` |
 | [tests/prad-gram.test.js](../tests/prad-gram.test.js) | Accuracy + panel/worker merge + J0 vs product |
 | [tests/prad-bench.test.js](../tests/prad-bench.test.js) | Main-thread product/J0 and worker timings through \(64\times 64\) |
+| [tests/matched-s.test.js](../tests/matched-s.test.js) | N=1 identity + 8×8 isotropic \(\lambda/2\) J0 \(S\) printout |
 
 Rebuild after Rust changes: `./wasm/build.ps1` (simd + scalar into `js/wasm/`).
 
@@ -84,14 +86,18 @@ fill_isolated_range(..., sample0, sample_count)  # sample_count==0 → remainder
 form_gram()
 compute(...)                    # fill_isolated + form_gram
 compute_j0(...)                 # axisymmetric planar fast path (Gauss-μ only)
-take_re() / take_im()           # row-major N×N f32
+take_re() / take_im()           # row-major N×N f32 Gram
+form_matched_s(z_ref)           # R, z0 match, S on the current Gram (z_ref≤0 → 50 Ω)
+take_z0()                       # length-N f64
+take_s_re() / take_s_im()       # row-major N×N f64
+match_iterations() / match_residual()
 n_samples()                     # full quadrature M = n_mu*n_phi
 n_elements()
 ```
 
 `form_gram` uses the **current** panel width of \(A\) (after a range fill, that is \(M/W\), not full \(M\)). Each panel’s \(P\) is already scaled by \(P_0/4\pi\); **summing panels** is the full Gram.
 
-Geometry: `x`, `y` as `Float32Array`, wavelengths. f32 throughout.
+Geometry: `x`, `y` as `Float32Array`, wavelengths. Gram is f32; match/\(S\) promote to f64.
 
 ---
 
@@ -117,6 +123,24 @@ For co-aligned planar elements with \(D=D(\mu)\) only, the φ integral is exact:
 J0 is the exact φ integral; the product kernel approximates φ with trapezoid \(n_\phi\). They agree as \(n_\phi\to\infty\) at **fixed** \(n_\mu\). Tests compare J0(\(n_\mu\)) to product(\(n_\mu\), large \(n_\phi\)), not to a coarse φ grid.
 
 Workers stay on the product / sample-panel path. Do not worker-split J0 unless φ-dependent patterns are dropped.
+
+---
+
+## Matched \(S\) (implemented, §6–8)
+
+Runs on whatever Gram is already in the kernel (`compute_j0` or `compute` / panel merge). Does **not** fill \(A\).
+
+\[
+R = 2\,Z_\mathrm{ref}\,P_H,\qquad
+z_0 \text{ from } \Re(R),\qquad
+S = D^{-1/2}(R-D)\,\mathrm{solve}(R+D,\,D^{1/2}).
+\]
+
+Constants: \(Z_\mathrm{ref}=50\,\Omega\), \(\varepsilon_z=10^{-9}\,\Omega\), \(K_\mathrm{max}=200\), \(\tau=10^{-3}\,\Omega\). Match is the method’s fixed point on \(\Re(R)\); \(S\) uses full Hermitian \(R\). Custom f64 Cholesky (real SPD for the match, Hermitian PD for \(R+D\)); a tiny pivot is floored rather than panicking.
+
+`form_matched_s(z_ref)` with `z_ref <= 0` or non-finite uses \(50\,\Omega\). After a successful match, \(\mathrm{diag}(S)\approx 0\). For J0 / axisymmetric planar elements \(R\) and \(S\) are real.
+
+One-port check: isolated \(P_H=P_0=1/2\) gives \(R=Z_\mathrm{ref}\), \(z_0=50\), \(S=0\).
 
 ---
 
@@ -146,9 +170,10 @@ P = \sum_w A_{:,S_w} A_{:,S_w}^H.
 cargo test --manifest-path wasm/Cargo.toml
 node --test tests/prad-gram.test.js
 node --test tests/prad-bench.test.js
+node --test tests/matched-s.test.js
 ```
 
-Rust covers \(N=1\) power, coincident/far pairs, Hermitian, quadrature convergence, naive Gram, **panel sum = full Gram**, and **J0 vs product** (same \(n_\mu\), large \(n_\phi\)) plus unique-ρ collapse on an 8×8 lattice. JS repeats that on simd/scalar WASM and checks sequential + real worker merge vs main thread.
+Rust covers \(N=1\) power, coincident/far pairs, Hermitian, quadrature convergence, naive Gram, **panel sum = full Gram**, **J0 vs product** (same \(n_\mu\), large \(n_\phi\)) plus unique-ρ collapse on an 8×8 lattice, and **matched \(S\)**: N=1 \(S=0\), far-pair weak coupling, match residual \(<\tau\), \(S\) symmetry. JS repeats the Gram checks on simd/scalar WASM and prints 8×8 isotropic \(\lambda/2\) \(S_{ii}\) plus worst-case \(|S_{ij}|\) from J0.
 
 ---
 
@@ -185,10 +210,10 @@ Suggested default orders vs electrical size were **not** used in the bench; 32/6
 
 ## Not done (continue here)
 
-1. **Visualizer UI** — geometry / element / frequency_scale → `runPradJob` or main-thread kernel. Pool already starts with far-field WASM init.
-2. **Method §6–11** — \(R=2 Z_\mathrm{ref} P_H\), real \(z_0\) match, \(S\) and \(T\), \(F^\mathrm{emb}=T^T F^\mathrm{iso}\), power-balance checks. \(O(N^3)\) after the Gram; need to **keep** \(A\) or \(F^\mathrm{iso}\) on the quadrature grid for mixing (today \(A\) is discarded after `form_gram` except inside the kernel).
+1. **Visualizer UI** — geometry / element / frequency_scale → `runPradJob` or main-thread kernel, then `form_matched_s`. Pool already starts with far-field WASM init.
+2. **Method §9–11** — \(T\) and \(F^\mathrm{emb}=T^T F^\mathrm{iso}\), power-balance checks. Need to **keep** \(A\) or \(F^\mathrm{iso}\) on the quadrature grid for mixing (`compute_j0` never builds \(A\)).
 3. **φ-dependent / polarized elements** — product grid is the right layout (`N×M`, later \(N\times 2M\)). `fill_amp` currently uses \(D(\mu)\) only. Workers stay on this path.
-4. **f64 Gram** if later \(P_\mathrm{loss}\) residuals are too large; hot kernel is f32 to match the far-field crate.
+4. **f64 Gram** if later \(P_\mathrm{loss}\) residuals are too large; hot kernel is f32 to match the far-field crate. Match/\(S\) already run in f64.
 
 ---
 
