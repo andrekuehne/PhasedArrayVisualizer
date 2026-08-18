@@ -53,6 +53,8 @@ pub struct PradState {
 	pub r_im: Vec<f64>,
 	pub s_re: Vec<f64>,
 	pub s_im: Vec<f64>,
+	pub t_re: Vec<f64>,
+	pub t_im: Vec<f64>,
 	pub match_iterations: u32,
 	pub match_residual: f64,
 }
@@ -74,6 +76,8 @@ impl PradState {
 			r_im: Vec::new(),
 			s_re: Vec::new(),
 			s_im: Vec::new(),
+			t_re: Vec::new(),
+			t_im: Vec::new(),
 			match_iterations: 0,
 			match_residual: 0.0,
 		}
@@ -261,6 +265,8 @@ impl PradState {
 		self.r_im.clear();
 		self.s_re.clear();
 		self.s_im.clear();
+		self.t_re.clear();
+		self.t_im.clear();
 		self.match_iterations = 0;
 		self.match_residual = 0.0;
 	}
@@ -278,6 +284,8 @@ impl PradState {
 		self.r_im = m.r_im;
 		self.s_re = m.s_re;
 		self.s_im = m.s_im;
+		self.t_re = m.t_re;
+		self.t_im = m.t_im;
 		self.match_iterations = m.iterations;
 		self.match_residual = m.residual;
 	}
@@ -739,6 +747,8 @@ mod tests {
 		close64(s.z0[0], Z_REF, 1e-6, "z0");
 		close64(s.s_re[0], 0.0, 1e-9, "S11 re");
 		close64(s.s_im[0], 0.0, 1e-12, "S11 im");
+		close64(s.t_re[0], 1.0, 1e-6, "T11");
+		close64(s.t_im[0], 0.0, 1e-12, "T11 im");
 		assert!(s.match_residual < TAU, "residual {}", s.match_residual);
 	}
 

@@ -10,6 +10,8 @@ import {Illuminations} from "./phasedarray/illumination.js"
 import {ElementCosN, ElementTypes, exponentFromPeakDbi, MIN_ELEMENT_GAIN_DBI} from "./phasedarray/element.js"
 import {Tapers} from "./phasedarray/tapers.js"
 import {defaultWatts, formatPower, formatPowerValue, isPowerScope, isPowerUnit, wattsFrom} from "./phasedarray/power.js"
+import {MATCHED_AUTO_ISOLATE_N, nMuFromGeometry, Z_REF} from "./phasedarray/matched.js"
+import {getRadiatedPowerKernel} from "./wasm/init.js"
 import {linspace} from "./util.js";
 /** @import { SceneQueue } from "./scene/scene-queue.js" */
 
@@ -45,20 +47,118 @@ const CHANGE_PA 	= 1 << 5;
 export class SceneControlPhasedArray extends SceneControl{
 	static autoUpdateURL = false;
 	constructor(parent){
-		super(parent, ['phase-bits', 'atten-lsb', 'atten-bits', 'atten-manual', 'phase-manual', 'phase-dither']);
+		super(parent, ['phase-bits', 'atten-lsb', 'atten-bits', 'atten-manual', 'phase-manual', 'phase-dither', 'coupling', 'steer-law']);
 		this.pa = null;
+		this._matchedFreq = NaN;
+		this._matchedKind = null;
+		this._matchedN = null;
+		this._steerFreq = NaN;
 		this.geometryControl = new SceneControlGeometry(this);
 		this.taperControl = new SceneControlAllTapers(this);
 		this.steerControl = new SceneControlSteeringDomain(this);
 		this.illumControl = new SceneControlIllumination(this);
 		this.elementControl = new SceneControlElement(this);
 		this.powerControl = new SceneControlPower(this);
+		this._couplingRadios = {
+			isolated: document.getElementById(this.prepend + '-coupling-isolated'),
+			matched: document.getElementById(this.prepend + '-coupling-matched'),
+		};
+		this._steerLawRadios = {
+			geometric: document.getElementById(this.prepend + '-steer-law-geometric'),
+			conjugate: document.getElementById(this.prepend + '-steer-law-conjugate'),
+		};
+		this._bind_mode_radios('coupling', this._couplingRadios);
+		this._bind_mode_radios('steer-law', this._steerLawRadios);
+		this.addEventListener('scene-loaded', () => { this.sync_mode_radios(); });
+		this.addEventListener('reset', () => {
+			this.find_element('coupling').value = 'isolated';
+			this.find_element('steer-law').value = 'geometric';
+			this.sync_mode_radios();
+		});
 		this.add_event_types(
 			'phased-array-changed',
 			'phased-array-phase-changed',
 			'phased-array-attenuation-changed',
 			'phased-array-calculation-changed',
 		);
+	}
+	_bind_mode_radios(key, radios){
+		for (const radio of Object.values(radios)){
+			if (radio === null) continue;
+			radio.addEventListener('change', () => {
+				if (!radio.checked) return;
+				this.find_element(key).value = radio.value;
+				this.find_element(key).dispatchEvent(new Event('change'));
+			});
+		}
+	}
+	sync_mode_radios(){
+		const coupling = this.couplingMode();
+		const law = this.steerLaw();
+		for (const [value, radio] of Object.entries(this._couplingRadios)){
+			if (radio) radio.checked = value === coupling;
+		}
+		for (const [value, radio] of Object.entries(this._steerLawRadios)){
+			if (radio) radio.checked = value === law;
+		}
+	}
+	couplingMode(){
+		return this.find_element('coupling').value === 'matched' ? 'matched' : 'isolated';
+	}
+	/**
+	 * Force Isolated when a rebuilt array is too large for matched S.
+	 * A later manual Coupling click is not a rebuild, so it stays matched.
+	 * @param {number} n
+	 */
+	applyCouplingSizeSafeguard(n){
+		if (!(n > MATCHED_AUTO_ISOLATE_N) || this.couplingMode() !== 'matched') return;
+		this.find_element('coupling').value = 'isolated';
+		this.sync_mode_radios();
+		if (typeof this.parent.update_url_parameters === 'function') this.parent.update_url_parameters();
+	}
+	steerLaw(){
+		return this.find_element('steer-law').value === 'conjugate' ? 'conjugate' : 'geometric';
+	}
+	frequencyScale(){
+		const ele = this.parent.find_element('farfield-frequency', false);
+		const v = ele ? Number(ele.value) : 1;
+		return Number.isFinite(v) && v > 0 ? v : 1;
+	}
+	control_changed(key){
+		super.control_changed(key);
+		if (key === 'coupling' || key === 'steer-law'){
+			this.sync_mode_radios();
+			if (typeof this.parent.update_url_parameters === 'function') this.parent.update_url_parameters();
+			this.request_recompute();
+		}
+	}
+	compute_matched_basis(freq){
+		const pa = this.pa;
+		const ep = pa.elementPattern;
+		const kind = ep ? ep.kind : 0;
+		const elemN = ep ? ep.n : 0;
+		const n = pa.size;
+		if (
+			pa.tRe && pa.tRe.length === n * n
+			&& this._matchedFreq === freq
+			&& this._matchedKind === kind
+			&& this._matchedN === elemN
+		) return;
+		const kernel = getRadiatedPowerKernel();
+		const nMu = nMuFromGeometry(pa.geometry, freq);
+		kernel.set_quadrature(nMu, 2);
+		kernel.compute_j0(pa.geometry.x, pa.geometry.y, freq, kind, elemN);
+		kernel.form_matched_s(Z_REF);
+		pa.set_matched_basis(
+			kernel.take_z0(),
+			kernel.take_s_re(),
+			kernel.take_s_im(),
+			kernel.take_t_re(),
+			kernel.take_t_im()
+		);
+		this._matchedFreq = freq;
+		this._matchedKind = kind;
+		this._matchedN = elemN;
 	}
 	/**
 	* Add callable objects to queue.
@@ -79,6 +179,13 @@ export class SceneControlPhasedArray extends SceneControl{
 		if (this.taperControl.calculationWaiting) changeFlag |= CHANGE_ATTEN;
 		if (this.changed['phase-bits'] || this.changed['phase-dither']) changeFlag |= CHANGE_PHASEQ;
 		if (this.changed['atten-bits'] || this.changed['atten-lsb']) changeFlag |= CHANGE_ATTENQ;
+		if (this.changed['steer-law']) changeFlag |= CHANGE_PHASE;
+		if (this.changed['coupling']){
+			changeFlag |= CHANGE_PHASE;
+			this.farfieldNeedsCalculation = true;
+		}
+		const freq = this.frequencyScale();
+		if (this.steerLaw() === 'conjugate' && this._steerFreq !== freq) changeFlag |= CHANGE_PHASE;
 
 		if (this.elementControl.calculationWaiting) this.farfieldNeedsCalculation = true;
 
@@ -86,6 +193,8 @@ export class SceneControlPhasedArray extends SceneControl{
 			queue.add('Updating array...', () => {
 					let first = this.pa === null;
 					this.pa = new PhasedArray(this.geometryControl.activeGeometry);
+					this.applyCouplingSizeSafeguard(this.pa.size);
+					this.pa.coupling = this.couplingMode();
 					this.trigger_event('phased-array-changed', this.pa);
 					if (first) this.load_hidden_controls();
 				}
@@ -106,11 +215,33 @@ export class SceneControlPhasedArray extends SceneControl{
 				this.pa.compute_illumination();
 			});
 		}
+		const coupling = this.couplingMode();
+		if (coupling === 'matched'){
+			const n = this.pa ? this.pa.size : 0;
+			const hasT = this.pa && this.pa.tRe && this.pa.tRe.length === n * n;
+			const basisDirty = this.pa === null
+				|| !hasT
+				|| this.geometryControl.calculationWaiting
+				|| this.elementControl.calculationWaiting
+				|| this._matchedFreq !== freq;
+			if (basisDirty){
+				queue.add('Computing matched S...', () => {
+					if (this.couplingMode() !== 'matched') return;
+					this.compute_matched_basis(freq);
+				});
+				changeFlag |= CHANGE_PHASE;
+				this.farfieldNeedsCalculation = true;
+			}
+		}
 		if (changeFlag & CHANGE_PHASE){
 			queue.add('Calculating phase...', () => {
 				const [theta, phi] = this.steerControl.get_theta_phi();
 				this.pa.set_theta_phi(theta, phi);
-				this.pa.compute_phase();
+				this.pa.coupling = this.couplingMode();
+				if (this.steerLaw() === 'conjugate') this.pa.compute_conjugate_phase(freq);
+				else this.pa.compute_phase();
+				this._steerFreq = freq;
+				this.clear_changed('steer-law', 'coupling');
 			});
 		}
 		if (changeFlag & CHANGE_ATTEN){

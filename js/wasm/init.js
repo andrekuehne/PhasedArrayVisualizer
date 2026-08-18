@@ -10,6 +10,8 @@ const SIMD_TEST = new Uint8Array([
 
 /** @type {import('./simd/farfield_kernel.js').FarfieldKernel | null} */
 let kernel = null;
+/** @type {import('./simd/farfield_kernel.js').RadiatedPowerKernel | null} */
+let pradKernel = null;
 /** @type {typeof import('./simd/farfield_kernel.js').extract_pattern_metrics | null} */
 let extractFn = null;
 /** @type {typeof import('./simd/farfield_kernel.js').apply_element_pattern | null} */
@@ -34,6 +36,16 @@ export function getFarfieldKernel(){
 		throw new Error('Farfield WASM kernel is not initialized.');
 	}
 	return kernel;
+}
+
+/**
+ * @returns {import('./simd/farfield_kernel.js').RadiatedPowerKernel}
+ */
+export function getRadiatedPowerKernel(){
+	if (pradKernel === null){
+		throw new Error('Farfield WASM kernel is not initialized.');
+	}
+	return pradKernel;
 }
 
 /**
@@ -89,6 +101,7 @@ export async function initFarfieldWasm(){
 		: await import('./scalar/farfield_kernel.js');
 	await mod.default();
 	kernel = new mod.FarfieldKernel();
+	pradKernel = new mod.RadiatedPowerKernel();
 	extractFn = mod.extract_pattern_metrics;
 	applyElementFn = mod.apply_element_pattern;
 	exponentFn = mod.element_exponent_from_peak_dbi;

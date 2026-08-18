@@ -160,6 +160,14 @@ impl RadiatedPowerKernel {
 		self.state.s_im.clone()
 	}
 
+	pub fn take_t_re(&self) -> Vec<f64> {
+		self.state.t_re.clone()
+	}
+
+	pub fn take_t_im(&self) -> Vec<f64> {
+		self.state.t_im.clone()
+	}
+
 	pub fn match_iterations(&self) -> u32 {
 		self.state.match_iterations
 	}

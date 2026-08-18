@@ -660,6 +660,24 @@ export class RadiatedPowerKernel {
     /**
      * @returns {Float64Array}
      */
+    take_t_im() {
+        const ret = wasm.radiatedpowerkernel_take_t_im(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    take_t_re() {
+        const ret = wasm.radiatedpowerkernel_take_t_re(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
     take_z0() {
         const ret = wasm.radiatedpowerkernel_take_z0(this.__wbg_ptr);
         var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();

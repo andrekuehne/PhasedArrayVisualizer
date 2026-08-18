@@ -10,6 +10,7 @@ import {dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {after, before, describe, test} from 'node:test';
 import {PATTERN_ISOTROPIC} from '../js/phasedarray/element.js';
+import {conjugatePhaseCycles, gemv, identityT, nMuFromGeometry} from '../js/phasedarray/matched.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const Z_REF = 50;
@@ -106,6 +107,10 @@ describe('matched S from J0 Prad', () => {
 				close(z0[0], Z_REF, 1e-5, 'z0');
 				close(sRe[0], 0, 1e-8, 'S11 re');
 				close(sIm[0], 0, 1e-12, 'S11 im');
+				const tRe = k.take_t_re();
+				const tIm = k.take_t_im();
+				close(tRe[0], 1, 1e-6, 'T11');
+				close(tIm[0], 0, 1e-12, 'T11 im');
 				assert.ok(k.match_residual() < TAU, `residual ${k.match_residual()}`);
 			});
 		});
@@ -178,5 +183,69 @@ describe('matched S from J0 Prad', () => {
 		);
 		lines.push('');
 		console.log(lines.join('\n'));
+	});
+
+	test('N=1 T is identity and GEMV is a no-op', () => {
+		const k = kernels.simd;
+		k.set_quadrature(8, 2);
+		k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s(Z_REF);
+		const tRe = k.take_t_re();
+		const tIm = k.take_t_im();
+		close(tRe[0], 1, 1e-6, 'T11');
+		const w = gemv(tRe, tIm, [0.4], [-0.3]);
+		close(w.re[0], 0.4, 1e-6, 'w re');
+		close(w.im[0], -0.3, 1e-6, 'w im');
+	});
+
+	test('8×8 GEMV w = T a and conjugate phases differ from geometric', () => {
+		const k = kernels.simd;
+		const nx = 8;
+		const ny = 8;
+		const {x, y} = rectArray(nx, ny, 0.5, 0.5);
+		const n = x.length;
+		k.set_quadrature(32, 2);
+		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s(Z_REF);
+		const tRe = k.take_t_re();
+		const tIm = k.take_t_im();
+		assert.equal(tRe.length, n * n);
+		const aRe = new Float64Array(n);
+		const aIm = new Float64Array(n);
+		for (let i = 0; i < n; i++) aRe[i] = 1;
+		const w = gemv(tRe, tIm, aRe, aIm);
+		assert.equal(w.re.length, n);
+		let maxOff = 0;
+		for (let i = 0; i < n; i++){
+			if (i !== 0) maxOff = Math.max(maxOff, Math.abs(tRe[i]));
+		}
+		assert.ok(maxOff > 1e-3, `T has off-diagonal ${maxOff}`);
+		const ident = identityT(n);
+		const wI = gemv(ident.re, ident.im, aRe, aIm);
+		let maxDiff = 0;
+		for (let i = 0; i < n; i++) maxDiff = Math.max(maxDiff, Math.abs(w.re[i] - wI.re[i]));
+		assert.ok(maxDiff > 1e-3, `T a differs from a (${maxDiff})`);
+
+		const theta = 30;
+		const phi = 0;
+		const cyclesEmb = conjugatePhaseCycles(x, y, theta, phi, 1, tRe, tIm, PATTERN_ISOTROPIC, 0);
+		const cyclesIso = conjugatePhaseCycles(x, y, theta, phi, 1, null, null, PATTERN_ISOTROPIC, 0);
+		const xf = Math.sin(theta * Math.PI / 180);
+		const cx = 0.5 * 0.5 * (nx - 1);
+		let maxGeoIso = 0;
+		let maxEmbIso = 0;
+		const d0 = cyclesIso[0] - (x[0] + cx) * xf;
+		for (let i = 0; i < n; i++){
+			const geo = (x[i] + cx) * xf;
+			let d = cyclesIso[i] - geo - d0;
+			d -= Math.round(d);
+			maxGeoIso = Math.max(maxGeoIso, Math.abs(d));
+			let e = cyclesEmb[i] - cyclesIso[i];
+			e -= Math.round(e);
+			maxEmbIso = Math.max(maxEmbIso, Math.abs(e));
+		}
+		assert.ok(maxGeoIso < 0.02, `isolated conjugate vs geometric ${maxGeoIso}`);
+		assert.ok(maxEmbIso > 1e-4, `embedded conjugate differs from isolated ${maxEmbIso}`);
+		assert.ok(nMuFromGeometry({r: [1.75]}, 1) >= 17);
 	});
 });

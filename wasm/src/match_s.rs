@@ -21,6 +21,8 @@ pub struct MatchedS {
 	pub r_im: Vec<f64>,
 	pub s_re: Vec<f64>,
 	pub s_im: Vec<f64>,
+	pub t_re: Vec<f64>,
+	pub t_im: Vec<f64>,
 	pub iterations: u32,
 	pub residual: f64,
 }
@@ -35,6 +37,8 @@ impl MatchedS {
 			r_im: Vec::new(),
 			s_re: Vec::new(),
 			s_im: Vec::new(),
+			t_re: Vec::new(),
+			t_im: Vec::new(),
 			iterations: 0,
 			residual: 0.0,
 		}
@@ -108,7 +112,7 @@ impl MatchedS {
 			residual = residual.max((zin.max(EPS_Z) - z0[p]).abs());
 		}
 
-		let (s_re, s_im) = form_s(&r_re, &r_im, &z0, n);
+		let (s_re, s_im, t_re, t_im) = form_s_and_t(&r_re, &r_im, &z0, n, z_ref);
 		Self {
 			n,
 			z_ref,
@@ -117,6 +121,8 @@ impl MatchedS {
 			r_im,
 			s_re,
 			s_im,
+			t_re,
+			t_im,
 			iterations,
 			residual,
 		}
@@ -232,8 +238,15 @@ fn chol_solve_herm(l_re: &[f64], l_im: &[f64], n: usize, b_re: &mut [f64], b_im:
 	}
 }
 
-/// \(S = D^{-1/2}(R-D)\,\mathrm{solve}(R+D, D^{1/2})\).
-fn form_s(r_re: &[f64], r_im: &[f64], z0: &[f64], n: usize) -> (Vec<f64>, Vec<f64>) {
+/// \(S = D^{-1/2}(R-D)\,\mathrm{solve}(R+D, D^{1/2})\),
+/// \(T = 2\sqrt{Z_\mathrm{ref}}\,\mathrm{solve}(R+D, D^{1/2})\).
+fn form_s_and_t(
+	r_re: &[f64],
+	r_im: &[f64],
+	z0: &[f64],
+	n: usize,
+	z_ref: f64,
+) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
 	let nn = n * n;
 	let mut sqrtz = vec![0.0f64; n];
 	for p in 0..n {
@@ -263,6 +276,14 @@ fn form_s(r_re: &[f64], r_im: &[f64], z0: &[f64], n: usize) -> (Vec<f64>, Vec<f6
 		}
 	}
 
+	let t_scale = 2.0 * z_ref.max(EPS_Z).sqrt();
+	let mut t_re = vec![0.0f64; nn];
+	let mut t_im = vec![0.0f64; nn];
+	for i in 0..nn {
+		t_re[i] = t_scale * x_re[i];
+		t_im[i] = t_scale * x_im[i];
+	}
+
 	let mut rmd_re = r_re.to_vec();
 	let rmd_im = r_im.to_vec();
 	for p in 0..n {
@@ -288,7 +309,7 @@ fn form_s(r_re: &[f64], r_im: &[f64], z0: &[f64], n: usize) -> (Vec<f64>, Vec<f6
 			s_im[i * n + j] = im * inv_sqrt;
 		}
 	}
-	(s_re, s_im)
+	(s_re, s_im, t_re, t_im)
 }
 
 #[cfg(test)]
@@ -342,6 +363,8 @@ mod tests {
 		close(m.z0[0], Z_REF, 1e-9, "z0");
 		close(m.s_re[0], 0.0, 1e-12, "S11 re");
 		close(m.s_im[0], 0.0, 1e-12, "S11 im");
+		close(m.t_re[0], 1.0, 1e-12, "T11");
+		close(m.t_im[0], 0.0, 1e-12, "T11 im");
 		assert!(m.residual < TAU, "residual {}", m.residual);
 	}
 
@@ -372,6 +395,44 @@ mod tests {
 		for v in m.s_re.iter().chain(m.s_im.iter()) {
 			close(*v, 0.0, 1e-12, "S");
 		}
+		close(m.t_re[0], 1.0, 1e-12, "T11");
+		close(m.t_re[3], 1.0, 1e-12, "T22");
+		close(m.t_re[1], 0.0, 1e-12, "T12");
+		close(m.t_re[2], 0.0, 1e-12, "T21");
+	}
+
+	fn gemv(m_re: &[f64], m_im: &[f64], a_re: &[f64], a_im: &[f64], n: usize) -> (Vec<f64>, Vec<f64>) {
+		let mut w_re = vec![0.0; n];
+		let mut w_im = vec![0.0; n];
+		for i in 0..n {
+			let mut re = 0.0;
+			let mut im = 0.0;
+			for j in 0..n {
+				let mr = m_re[i * n + j];
+				let mi = m_im[i * n + j];
+				re += mr * a_re[j] - mi * a_im[j];
+				im += mr * a_im[j] + mi * a_re[j];
+			}
+			w_re[i] = re;
+			w_im[i] = im;
+		}
+		(w_re, w_im)
+	}
+
+	#[test]
+	fn two_port_t_maps_incident_to_weights() {
+		let p_re = [0.5f32, 0.125, 0.125, 0.5];
+		let p_im = [0.0f32; 4];
+		let m = MatchedS::from_gram(&p_re, &p_im, 2, Z_REF);
+		close(m.t_im.iter().fold(0.0f64, |a, v| a.max(v.abs())), 0.0, 1e-12, "T im");
+		assert!((m.t_re[0] - 1.0).abs() > 1e-4, "coupled T11 != 1");
+		let a_re = [1.0, 0.0];
+		let a_im = [0.0, 0.0];
+		let (w_re, w_im) = gemv(&m.t_re, &m.t_im, &a_re, &a_im, 2);
+		close(w_re[0], m.t_re[0], 1e-12, "T col0");
+		close(w_re[1], m.t_re[2], 1e-12, "T col0 row1");
+		close(w_im[0], 0.0, 1e-12, "w im");
+		close(w_im[1], 0.0, 1e-12, "w im");
 	}
 
 	#[test]

@@ -110,14 +110,20 @@ export class PhasedArrayScene extends SceneParent{
 			const pAnt = pwr.getWatts();
 			const pAvail = pa.availablePowerWatts(pAnt);
 			const pStim = pa.totalPowerWatts(pAnt);
+			const matched = pa.coupling === 'matched';
+			const gamma = matched ? Number(pa.reflectionGamma) || 0 : 0;
+			const pRef = matched ? pStim * gamma : 0;
+			const pAcc = matched ? pStim * (1 - gamma) : pStim;
 			this.find_element('available-power').innerHTML = pwr.formatEirp(pAvail, 1);
 			this.find_element('stimulated-power').innerHTML = pwr.formatEirp(pStim, 1);
+			this.find_element('reflected-power').innerHTML = matched ? pwr.formatEirp(pRef, 1) : '—';
+			this.find_element('accepted-power').innerHTML = matched ? pwr.formatEirp(pAcc, 1) : '—';
 			const util = pAvail > 0 ? pStim / pAvail : 0;
 			const utilDb = util > 0 ? (10 * Math.log10(util)).toFixed(1) : '-Inf';
 			this.find_element('power-utilization').innerHTML = `${(util * 100).toFixed(1)} % (${utilDb} dB)`;
 			const ff = this.farfieldControl.ff;
 			if (ff == null || ff.dirMax == null) return;
-			const eirp = ff.dirMax * pStim;
+			const eirp = ff.dirMax * pAcc;
 			this.find_element('peak-eirp').innerHTML = pwr.formatEirp(eirp, 1);
 			this.plotFF.set_title_metrics(
 				`Directivity: ${(10*Math.log10(ff.dirMax)).toFixed(1)} dB, EIRP: ${pwr.formatEirp(eirp, 1)}`

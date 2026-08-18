@@ -38,6 +38,8 @@
 	<input type="text" id="pa-atten-manual" hidden />
 	<input type="text" id="pa-phase-manual" hidden />
 	<input type="text" id="pa-power-scope" hidden value="element" />
+	<input type="text" id="pa-coupling" hidden value="isolated" />
+	<input type="text" id="pa-steer-law" hidden value="geometric" />
 	<div class="app">
 		<aside class="sidebar">
 			<header class="sidebar-header">
@@ -67,6 +69,10 @@
 							<div class="form-group">
 								<label for="pa-farfield-click-steer">Click to steer</label>
 								<input type="checkbox" id="pa-farfield-click-steer" name="pa-farfield-click-steer" checked>
+							</div>
+							<div class="radio-row" id="pa-steer-law-div">
+								<label><input type="radio" name="pa-steer-law-radio" id="pa-steer-law-geometric" value="geometric" checked /> Geometric</label>
+								<label><input type="radio" name="pa-steer-law-radio" id="pa-steer-law-conjugate" value="conjugate" /> Conjugate</label>
 							</div>
 							<div class="form-group">
 								<button type="button" id="pa-steer-broadside">Reset to Broadside</button>
@@ -105,8 +111,14 @@
 						</div>
 					</div>
 					<div class="control-row">
-						<div id="pa-element-controls">
-							<h3>Element</h3>
+						<div>
+							<div id="pa-element-controls">
+								<h3>Element</h3>
+							</div>
+							<div class="radio-row" id="pa-coupling-div">
+								<label><input type="radio" name="pa-coupling-radio" id="pa-coupling-isolated" value="isolated" checked /> Isolated</label>
+								<label><input type="radio" name="pa-coupling-radio" id="pa-coupling-matched" value="matched" /> Matched</label>
+							</div>
 						</div>
 						<div>
 							<h3>Power</h3>
@@ -226,6 +238,14 @@
 										<td id="pa-stimulated-power" class="metric-value"></td>
 									</tr>
 									<tr>
+										<td>Reflected Power</td>
+										<td id="pa-reflected-power" class="metric-value"></td>
+									</tr>
+									<tr>
+										<td>Accepted Power</td>
+										<td id="pa-accepted-power" class="metric-value"></td>
+									</tr>
+									<tr>
 										<td>Power Utilization</td>
 										<td id="pa-power-utilization" class="metric-value"></td>
 									</tr>
@@ -233,7 +253,6 @@
 										<td>Peak EIRP</td>
 										<td id="pa-peak-eirp" class="metric-value"></td>
 									</tr>
-									<tr><td></td><td></td></tr>
 								</table>
 							</div>
 						</div>
