@@ -502,6 +502,112 @@ export class PatternMetrics {
 }
 if (Symbol.dispose) PatternMetrics.prototype[Symbol.dispose] = PatternMetrics.prototype.free;
 
+export class RadiatedPowerKernel {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        RadiatedPowerKernelFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_radiatedpowerkernel_free(ptr, 0);
+    }
+    /**
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} frequency_scale
+     * @param {number} element_kind
+     * @param {number} element_n
+     */
+    compute(x, y, frequency_scale, element_kind, element_n) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_compute(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, element_kind, element_n);
+    }
+    /**
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} frequency_scale
+     * @param {number} element_kind
+     * @param {number} element_n
+     */
+    fill_isolated(x, y, frequency_scale, element_kind, element_n) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_fill_isolated(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, element_kind, element_n);
+    }
+    /**
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} frequency_scale
+     * @param {number} element_kind
+     * @param {number} element_n
+     * @param {number} sample0
+     * @param {number} sample_count
+     */
+    fill_isolated_range(x, y, frequency_scale, element_kind, element_n, sample0, sample_count) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_fill_isolated_range(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, element_kind, element_n, sample0, sample_count);
+    }
+    form_gram() {
+        wasm.radiatedpowerkernel_form_gram(this.__wbg_ptr);
+    }
+    /**
+     * @returns {number}
+     */
+    n_elements() {
+        const ret = wasm.radiatedpowerkernel_n_elements(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    n_samples() {
+        const ret = wasm.radiatedpowerkernel_n_samples(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    constructor() {
+        const ret = wasm.radiatedpowerkernel_new();
+        this.__wbg_ptr = ret;
+        RadiatedPowerKernelFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} n_mu
+     * @param {number} n_phi
+     */
+    set_quadrature(n_mu, n_phi) {
+        wasm.radiatedpowerkernel_set_quadrature(this.__wbg_ptr, n_mu, n_phi);
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    take_im() {
+        const ret = wasm.radiatedpowerkernel_take_im(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    take_re() {
+        const ret = wasm.radiatedpowerkernel_take_re(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+}
+if (Symbol.dispose) RadiatedPowerKernel.prototype[Symbol.dispose] = RadiatedPowerKernel.prototype.free;
+
 /**
  * Multiply AF intensity `total` (row-major `i2 * n1 + i1`) by the element
  * power pattern. Returns the new peak. Cos^n uses `[max(w,0)]^n` and is 0
@@ -586,6 +692,9 @@ const FarfieldKernelFinalization = (typeof FinalizationRegistry === 'undefined')
 const PatternMetricsFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_patternmetrics_free(ptr, 1));
+const RadiatedPowerKernelFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_radiatedpowerkernel_free(ptr, 1));
 
 function getArrayF32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;

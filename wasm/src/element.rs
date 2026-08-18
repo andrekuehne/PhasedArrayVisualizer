@@ -1,7 +1,6 @@
 use crate::metrics::boresight_cosine;
 use wasm_bindgen::prelude::*;
 
-#[allow(dead_code)]
 pub const PATTERN_ISOTROPIC: u32 = 0;
 pub const PATTERN_COS_N: u32 = 1;
 

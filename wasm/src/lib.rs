@@ -1,9 +1,12 @@
 mod element;
 mod kernel;
 mod metrics;
+mod prad;
+mod quadrature;
 mod sincos;
 
 use kernel::FarfieldState;
+use prad::PradState;
 use wasm_bindgen::prelude::*;
 
 pub use kernel::{DOMAIN_LUDWIG3, DOMAIN_SPHERICAL, DOMAIN_UV};
@@ -49,5 +52,89 @@ impl FarfieldKernel {
 
 	pub fn take_total(&self) -> Vec<f32> {
 		self.state.total.clone()
+	}
+}
+
+#[wasm_bindgen]
+pub struct RadiatedPowerKernel {
+	state: PradState,
+}
+
+#[wasm_bindgen]
+impl RadiatedPowerKernel {
+	#[wasm_bindgen(constructor)]
+	pub fn new() -> RadiatedPowerKernel {
+		RadiatedPowerKernel {
+			state: PradState::new(),
+		}
+	}
+
+	pub fn set_quadrature(&mut self, n_mu: u32, n_phi: u32) {
+		self.state.set_quadrature(n_mu, n_phi);
+	}
+
+	pub fn fill_isolated(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		element_kind: u32,
+		element_n: f32,
+	) {
+		self.state
+			.fill_isolated(x, y, frequency_scale, element_kind, element_n);
+	}
+
+	pub fn fill_isolated_range(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		element_kind: u32,
+		element_n: f32,
+		sample0: u32,
+		sample_count: u32,
+	) {
+		self.state.fill_isolated_range(
+			x,
+			y,
+			frequency_scale,
+			element_kind,
+			element_n,
+			sample0,
+			sample_count,
+		);
+	}
+
+	pub fn form_gram(&mut self) {
+		self.state.form_gram();
+	}
+
+	pub fn compute(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		element_kind: u32,
+		element_n: f32,
+	) {
+		self.state
+			.compute(x, y, frequency_scale, element_kind, element_n);
+	}
+
+	pub fn take_re(&self) -> Vec<f32> {
+		self.state.p_re.clone()
+	}
+
+	pub fn take_im(&self) -> Vec<f32> {
+		self.state.p_im.clone()
+	}
+
+	pub fn n_samples(&self) -> u32 {
+		self.state.n_samples() as u32
+	}
+
+	pub fn n_elements(&self) -> u32 {
+		self.state.n_elements() as u32
 	}
 }

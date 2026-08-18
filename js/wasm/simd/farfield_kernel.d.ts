@@ -52,6 +52,21 @@ export class PatternMetrics {
     squint_deg: number;
 }
 
+export class RadiatedPowerKernel {
+    free(): void;
+    [Symbol.dispose](): void;
+    compute(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number): void;
+    fill_isolated(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number): void;
+    fill_isolated_range(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number, sample0: number, sample_count: number): void;
+    form_gram(): void;
+    n_elements(): number;
+    n_samples(): number;
+    constructor();
+    set_quadrature(n_mu: number, n_phi: number): void;
+    take_im(): Float32Array;
+    take_re(): Float32Array;
+}
+
 /**
  * Multiply AF intensity `total` (row-major `i2 * n1 + i1`) by the element
  * power pattern. Returns the new peak. Cos^n uses `[max(w,0)]^n` and is 0
@@ -104,6 +119,7 @@ export interface InitOutput {
     readonly __wbg_get_patternmetrics_squint_ax2_deg: (a: number) => number;
     readonly __wbg_get_patternmetrics_squint_deg: (a: number) => number;
     readonly __wbg_patternmetrics_free: (a: number, b: number) => void;
+    readonly __wbg_radiatedpowerkernel_free: (a: number, b: number) => void;
     readonly __wbg_set_patternmetrics_hpbw_ax1: (a: number, b: number) => void;
     readonly __wbg_set_patternmetrics_hpbw_ax1_clipped: (a: number, b: number) => void;
     readonly __wbg_set_patternmetrics_hpbw_ax1_deg: (a: number, b: number) => void;
@@ -144,6 +160,16 @@ export interface InitOutput {
     readonly farfieldkernel_prepare: (a: number, b: number, c: number) => void;
     readonly farfieldkernel_set_inputs: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => void;
     readonly farfieldkernel_take_total: (a: number) => [number, number];
+    readonly radiatedpowerkernel_compute: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
+    readonly radiatedpowerkernel_fill_isolated: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
+    readonly radiatedpowerkernel_fill_isolated_range: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
+    readonly radiatedpowerkernel_form_gram: (a: number) => void;
+    readonly radiatedpowerkernel_n_elements: (a: number) => number;
+    readonly radiatedpowerkernel_n_samples: (a: number) => number;
+    readonly radiatedpowerkernel_new: () => number;
+    readonly radiatedpowerkernel_set_quadrature: (a: number, b: number, c: number) => void;
+    readonly radiatedpowerkernel_take_im: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_re: (a: number) => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
