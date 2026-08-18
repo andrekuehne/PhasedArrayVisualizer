@@ -10,7 +10,7 @@ import {dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {after, before, describe, test} from 'node:test';
 import {PATTERN_ISOTROPIC} from '../js/phasedarray/element.js';
-import {conjugatePhaseCycles, gemv, identityT, nMuFromGeometry} from '../js/phasedarray/matched.js';
+import {alignPhaseCycles, conjugatePhaseCycles, gemv, identityT, nMuFromGeometry} from '../js/phasedarray/matched.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const Z_REF = 50;
@@ -247,5 +247,60 @@ describe('matched S from J0 Prad', () => {
 		assert.ok(maxGeoIso < 0.02, `isolated conjugate vs geometric ${maxGeoIso}`);
 		assert.ok(maxEmbIso > 1e-4, `embedded conjugate differs from isolated ${maxEmbIso}`);
 		assert.ok(nMuFromGeometry({r: [1.75]}, 1) >= 17);
+	});
+
+	test('alignPhaseCycles removes a global offset and anchors conjugate to geometric', () => {
+		const n = 8;
+		const target = new Float32Array(n);
+		const source = new Float32Array(n);
+		const offset = 0.37;
+		for (let i = 0; i < n; i++){
+			target[i] = 0.15 * i;
+			source[i] = target[i] + offset;
+		}
+		const aligned = alignPhaseCycles(source, target);
+		let maxErr = 0;
+		for (let i = 0; i < n; i++) maxErr = Math.max(maxErr, Math.abs(aligned[i] - target[i]));
+		assert.ok(maxErr < 1e-6, `constant offset residual ${maxErr}`);
+
+		const k = kernels.simd;
+		const nx = 8;
+		const ny = 8;
+		const {x, y} = rectArray(nx, ny, 0.5, 0.5);
+		const nn = x.length;
+		k.set_quadrature(32, 2);
+		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s(Z_REF);
+		const tRe = k.take_t_re();
+		const tIm = k.take_t_im();
+		const theta = 30;
+		const xf = Math.sin(theta * Math.PI / 180);
+		const cx = 0.5 * 0.5 * (nx - 1);
+		const geo = new Float32Array(nn);
+		for (let i = 0; i < nn; i++) geo[i] = (x[i] + cx) * xf;
+
+		const iso = alignPhaseCycles(
+			conjugatePhaseCycles(x, y, theta, 0, 1, null, null, PATTERN_ISOTROPIC, 0),
+			geo
+		);
+		const emb = alignPhaseCycles(
+			conjugatePhaseCycles(x, y, theta, 0, 1, tRe, tIm, PATTERN_ISOTROPIC, 0),
+			geo
+		);
+		let maxIso = 0;
+		let meanRe = 0;
+		let meanIm = 0;
+		const twoPi = 2 * Math.PI;
+		for (let i = 0; i < nn; i++){
+			maxIso = Math.max(maxIso, Math.abs(iso[i] - geo[i]));
+			const d = twoPi * (emb[i] - geo[i]);
+			meanRe += Math.cos(d);
+			meanIm += Math.sin(d);
+		}
+		assert.ok(maxIso < 0.02, `aligned isolated vs geometric ${maxIso}`);
+		assert.ok(Math.hypot(meanRe, meanIm) / nn > 0.99, 'aligned embedded offset is ~0');
+		let maxEmbGeo = 0;
+		for (let i = 0; i < nn; i++) maxEmbGeo = Math.max(maxEmbGeo, Math.abs(emb[i] - geo[i]));
+		assert.ok(maxEmbGeo > 1e-4, `aligned embedded still differs from geometric ${maxEmbGeo}`);
 	});
 });

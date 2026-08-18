@@ -1,6 +1,6 @@
 import {ones, zeros} from "../util.js";
 import { IlluminationTypicalPlaneWave } from "./illumination.js"
-import {conjugatePhaseCycles, gemv, reflectionRatio} from "./matched.js";
+import {alignPhaseCycles, conjugatePhaseCycles, gemv, reflectionRatio} from "./matched.js";
 /** @import { GeometryHint } from "./geometry.js" */
 /** @import { IlluminationHint } from "./illumination.js" */
 
@@ -123,6 +123,7 @@ export class PhasedArray{
 	/**
 	 * Conjugate of embedded-pattern phase at the commanded (θ,φ).
 	 * Uses cached T when matched; identity T when isolated.
+	 * A global cycle offset (and unwrap) anchors the result to the geometric steer law.
 	 * @param {number} frequencyScale
 	 */
 	compute_conjugate_phase(frequencyScale){
@@ -141,9 +142,11 @@ export class PhasedArray{
 			kind,
 			nExp
 		);
+		this.compute_phase();
+		const aligned = alignPhaseCycles(cycles, this.vSteerPhaseFactor);
 		for (let i = 0; i < this.size; i++){
-			this.vSteerPhaseFactor[i] = cycles[i];
-			this.vIdealPhaseFactor[i] = cycles[i] - this.vIllumPhaseFactor[i];
+			this.vSteerPhaseFactor[i] = aligned[i];
+			this.vIdealPhaseFactor[i] = aligned[i] - this.vIllumPhaseFactor[i];
 		}
 	}
 	set_matched_basis(z0, sRe, sIm, tRe, tIm){

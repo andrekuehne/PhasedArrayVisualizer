@@ -158,3 +158,32 @@ export function conjugatePhaseCycles(
 	}
 	return cycles;
 }
+
+/**
+ * Shift `source` by one global cycle offset so it sits as close as possible
+ * to `reference` as unit-magnitude complex vectors:
+ * α = exp(j arg Σ exp(j 2π (ref − src))), then unwrap onto the reference branch.
+ *
+ * @param {ArrayLike<number>} source
+ * @param {ArrayLike<number>} reference
+ * @returns {Float32Array}
+ */
+export function alignPhaseCycles(source, reference){
+	const n = source.length;
+	const twoPi = 2 * Math.PI;
+	let re = 0;
+	let im = 0;
+	for (let i = 0; i < n; i++){
+		const d = twoPi * (reference[i] - source[i]);
+		re += Math.cos(d);
+		im += Math.sin(d);
+	}
+	const offset = (re === 0 && im === 0) ? 0 : Math.atan2(im, re) / twoPi;
+	const out = new Float32Array(n);
+	for (let i = 0; i < n; i++){
+		let d = source[i] + offset - reference[i];
+		d -= Math.round(d);
+		out[i] = reference[i] + d;
+	}
+	return out;
+}
