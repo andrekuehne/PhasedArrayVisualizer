@@ -223,6 +223,7 @@ export class SceneControlTaper extends SceneControlWithSelectorAutoBuild{
 	control_changed(key){
 		super.control_changed(key);
 		this._activeTaper = null;
+		if (key.endsWith('taper')) this.request_recompute();
 	}
 	get calculationWaiting(){
 		return this._activeTaper === null;
@@ -335,6 +336,7 @@ export class SceneControlAllTapers extends SceneControl{
 			eleY.style.display = 'block';
 			eleX.querySelector("label").innerHTML = "X-Taper";
 		}
+		if (key === 'taper-sampling') this.request_recompute();
 	}
 	/**
 	* Add callable objects to queue.
@@ -410,6 +412,10 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 	}
 	control_changed(key){
 		super.control_changed(key);
+		if (key === 'farfield-domain'){
+			this.request_recompute();
+			return;
+		}
 		if (key !== 'farfield-frequency' || this.ff === null) return;
 		this.parent.update_url_parameters();
 	}
@@ -738,6 +744,7 @@ export class SceneControlElement extends SceneControlWithSelectorAutoBuild{
 		super.control_changed(key);
 		this.activeElement = null;
 		this.update_n_display();
+		if (key === this.primaryKey) this.request_recompute();
 	}
 	update_n_display(){
 		const isCos = this.selected_class() === ElementCosN;
