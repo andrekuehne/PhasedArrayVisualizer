@@ -3,14 +3,39 @@
 //! Isolated scalar fields from planar geometry (wavelengths) times a
 //! power-conserving element directivity, then \(P_H = (P_0 / 4\pi) A A^H\).
 
+use crate::bessel::j0f;
 use crate::element::{PATTERN_COS_N, PATTERN_ISOTROPIC};
 use crate::quadrature::HemisphereQuad;
 use crate::sincos::{load4, sincos_f32x4, store4};
+use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, Hasher};
 use wide::f32x4;
 
 pub const P0: f32 = 0.5;
 
 const SAMPLE_BLOCK: usize = 64;
+
+/// Deterministic hasher so the unique-ρ cache works on wasm32 (no getrandom).
+#[derive(Default, Clone)]
+struct U32Hasher(u64);
+
+impl Hasher for U32Hasher {
+	fn finish(&self) -> u64 {
+		self.0
+	}
+	fn write(&mut self, bytes: &[u8]) {
+		let mut h = self.0;
+		for &b in bytes {
+			h = h.wrapping_mul(0x100000001b3).wrapping_add(b as u64);
+		}
+		self.0 = h;
+	}
+	fn write_u32(&mut self, i: u32) {
+		self.0 = i as u64;
+	}
+}
+
+type RhoCache = HashMap<u32, f32, BuildHasherDefault<U32Hasher>>;
 
 pub struct PradState {
 	pub quad: Option<HemisphereQuad>,
@@ -21,6 +46,7 @@ pub struct PradState {
 	pub a_im: Vec<f32>,
 	pub p_re: Vec<f32>,
 	pub p_im: Vec<f32>,
+	pub n_unique_rho: usize,
 }
 
 impl PradState {
@@ -34,6 +60,7 @@ impl PradState {
 			a_im: Vec::new(),
 			p_re: Vec::new(),
 			p_im: Vec::new(),
+			n_unique_rho: 0,
 		}
 	}
 
@@ -161,6 +188,69 @@ impl PradState {
 		self.fill_isolated(x, y, frequency_scale, element_kind, element_n);
 		self.form_gram();
 	}
+
+	/// Axisymmetric planar fast path: Gauss-μ of \(D(\mu) J_0(k\rho\sqrt{1-\mu^2})\).
+	/// Uses `n_mu` from the last `set_quadrature`; does not fill `A`.
+	pub fn compute_j0(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		element_kind: u32,
+		element_n: f32,
+	) {
+		if self.quad.is_none() || x.len() != y.len() || x.is_empty() {
+			self.n = 0;
+			self.n_unique_rho = 0;
+			self.p_re.clear();
+			self.p_im.clear();
+			return;
+		}
+		let n = x.len();
+		self.n = n;
+		let nn = n * n;
+		self.p_re.clear();
+		self.p_re.resize(nn, 0.0);
+		self.p_im.clear();
+		self.p_im.resize(nn, 0.0);
+		let k = std::f32::consts::TAU * frequency_scale;
+		let quad = self.quad.as_ref().unwrap();
+		let n_mu = quad.n_mu;
+		let mut coeff = vec![0.0f64; n_mu];
+		let mut s_mu = vec![0.0f32; n_mu];
+		for i in 0..n_mu {
+			let mu = quad.mu1d[i];
+			let d = element_directivity(mu, element_kind, element_n);
+			coeff[i] = (P0 as f64 * 0.5) * (quad.w_mu[i] as f64) * (d as f64);
+			s_mu[i] = (1.0 - mu * mu).max(0.0).sqrt();
+		}
+		let mut cache = RhoCache::default();
+		for p in 0..n {
+			for q in 0..=p {
+				let dx = x[p] - x[q];
+				let dy = y[p] - y[q];
+				let rho2 = dx.mul_add(dx, dy * dy);
+				let val = *cache.entry(rho2.to_bits()).or_insert_with(|| {
+					radial_integral(rho2, k, &coeff, &s_mu)
+				});
+				self.p_re[p * n + q] = val;
+				self.p_re[q * n + p] = val;
+			}
+		}
+		self.n_unique_rho = cache.len();
+	}
+}
+
+fn radial_integral(rho2: f32, k: f32, coeff: &[f64], s_mu: &[f32]) -> f32 {
+	if !(rho2 > 0.0) {
+		return coeff.iter().sum::<f64>() as f32;
+	}
+	let kr = k * rho2.sqrt();
+	let mut acc = 0.0f64;
+	for i in 0..coeff.len() {
+		acc += coeff[i] * (j0f(kr * s_mu[i]) as f64);
+	}
+	acc as f32
 }
 
 fn element_directivity(mu: f32, kind: u32, n: f32) -> f32 {
@@ -463,5 +553,129 @@ mod tests {
 			close(acc_re[i], full.p_re[i], 3e-5, "panel re");
 			close(acc_im[i], full.p_im[i], 3e-5, "panel im");
 		}
+	}
+
+	fn max_abs(a: &[f32], b: &[f32]) -> f32 {
+		a.iter()
+			.zip(b)
+			.map(|(x, y)| (x - y).abs())
+			.fold(0.0f32, f32::max)
+	}
+
+	fn rect_xy(nx: usize, ny: usize, dx: f32, dy: f32) -> (Vec<f32>, Vec<f32>) {
+		let mut x = Vec::with_capacity(nx * ny);
+		let mut y = Vec::with_capacity(nx * ny);
+		for ix in 0..nx {
+			for iy in 0..ny {
+				x.push(dx * ix as f32);
+				y.push(dy * iy as f32);
+			}
+		}
+		(x, y)
+	}
+
+	#[test]
+	fn j0_n1_isotropic_radiates_p0() {
+		let mut s = PradState::new();
+		s.set_quadrature(8, 16);
+		s.compute_j0(&[0.0], &[0.0], 1.0, PATTERN_ISOTROPIC, 0.0);
+		assert_eq!(s.n_elements(), 1);
+		assert_eq!(s.n_unique_rho, 1);
+		close(s.p_re[0], P0, 2e-6, "J0 P11 re");
+		close(s.p_im[0], 0.0, 0.0, "J0 P11 im");
+	}
+
+	#[test]
+	fn j0_n1_cos_n_radiates_p0() {
+		let mut s = PradState::new();
+		s.set_quadrature(12, 16);
+		let n = 10f32.powf(0.5) * 0.5 - 1.0;
+		s.compute_j0(&[0.1], &[-0.2], 1.0, PATTERN_COS_N, n);
+		close(s.p_re[0], P0, 5e-4, "J0 P11 cos^n");
+		close(s.p_im[0], 0.0, 0.0, "J0 P11 im");
+	}
+
+	#[test]
+	fn j0_two_coincident_elements() {
+		let mut s = PradState::new();
+		s.set_quadrature(8, 16);
+		s.compute_j0(&[0.3, 0.3], &[0.1, 0.1], 1.0, PATTERN_ISOTROPIC, 0.0);
+		close(s.p_re[0], P0, 2e-6, "J0 P11");
+		close(s.p_re[3], P0, 2e-6, "J0 P22");
+		close(s.p_re[1], P0, 2e-6, "J0 P12");
+		close(s.p_re[2], P0, 2e-6, "J0 P21");
+		close(s.p_im[1], 0.0, 0.0, "J0 P12 im");
+	}
+
+	#[test]
+	fn j0_matches_product_two_element() {
+		let x = [0.0f32, 0.5];
+		let y = [0.0f32, 0.0];
+		let mut j0 = PradState::new();
+		let mut prod = PradState::new();
+		j0.set_quadrature(16, 2);
+		prod.set_quadrature(16, 64);
+		j0.compute_j0(&x, &y, 1.0, PATTERN_ISOTROPIC, 0.0);
+		prod.compute(&x, &y, 1.0, PATTERN_ISOTROPIC, 0.0);
+		close(j0.p_re[0], P0, 2e-6, "J0 P11");
+		close(prod.p_re[0], P0, 1e-4, "prod P11");
+		let dre = max_abs(&j0.p_re, &prod.p_re);
+		let dim = j0.p_im.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+		assert!(dre < 1e-3, "J0 vs product max|Δre|={dre}");
+		assert!(dim == 0.0, "J0 imag {dim}");
+	}
+
+	#[test]
+	fn j0_matches_product_irregular_cos_n() {
+		let x = [0.0f32, 0.4, 0.9, 1.3];
+		let y = [0.1f32, -0.2, 0.05, 0.3];
+		let mut j0 = PradState::new();
+		let mut prod = PradState::new();
+		j0.set_quadrature(24, 2);
+		prod.set_quadrature(24, 96);
+		j0.compute_j0(&x, &y, 1.15, PATTERN_COS_N, 0.8);
+		prod.compute(&x, &y, 1.15, PATTERN_COS_N, 0.8);
+		let n = 4;
+		for p in 0..n {
+			for q in 0..n {
+				let a = p * n + q;
+				let b = q * n + p;
+				close(j0.p_re[a], j0.p_re[b], 0.0, "J0 re symmetric");
+				close(j0.p_im[a], 0.0, 0.0, "J0 im");
+			}
+		}
+		let dre = max_abs(&j0.p_re, &prod.p_re);
+		assert!(dre < 1e-3, "J0 vs product max|Δre|={dre}");
+	}
+
+	#[test]
+	fn j0_large_separation_offdiag_small() {
+		let mut s = PradState::new();
+		s.set_quadrature(48, 2);
+		s.compute_j0(&[0.0, 20.0], &[0.0, 0.0], 1.0, PATTERN_ISOTROPIC, 0.0);
+		close(s.p_re[0], P0, 1e-5, "J0 P11");
+		assert!(s.p_re[1].abs() < 0.05, "J0 far |P12|={}", s.p_re[1]);
+	}
+
+	#[test]
+	fn j0_rect_lattice_unique_rho_and_product() {
+		let (x, y) = rect_xy(8, 8, 0.5, 0.5);
+		let n = x.len();
+		let mut j0 = PradState::new();
+		let mut prod = PradState::new();
+		j0.set_quadrature(16, 2);
+		prod.set_quadrature(16, 64);
+		j0.compute_j0(&x, &y, 1.0, PATTERN_ISOTROPIC, 0.0);
+		prod.compute(&x, &y, 1.0, PATTERN_ISOTROPIC, 0.0);
+		let pairs = n * (n + 1) / 2;
+		assert!(
+			j0.n_unique_rho < pairs / 8,
+			"unique ρ={} vs pairs={}",
+			j0.n_unique_rho,
+			pairs
+		);
+		close(j0.p_re[0], P0, 2e-6, "J0 P11 lattice");
+		let dre = max_abs(&j0.p_re, &prod.p_re);
+		assert!(dre < 2e-3, "8x8 J0 vs product max|Δre|={dre}");
 	}
 }

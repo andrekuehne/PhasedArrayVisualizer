@@ -50,11 +50,13 @@ pub fn gauss_legendre_01(n: usize) -> (Vec<f64>, Vec<f64>) {
 }
 
 /// Flattened product grid: μ outer, φ inner. Length `n_mu * n_phi`.
+/// `mu1d` / `w_mu` are the 1-D Gauss–Legendre nodes on [0, 1] (length `n_mu`).
 pub struct HemisphereQuad {
-	#[allow(dead_code)]
 	pub n_mu: usize,
 	#[allow(dead_code)]
 	pub n_phi: usize,
+	pub mu1d: Vec<f32>,
+	pub w_mu: Vec<f32>,
 	pub mu: Vec<f32>,
 	pub u: Vec<f32>,
 	pub v: Vec<f32>,
@@ -65,6 +67,8 @@ impl HemisphereQuad {
 	pub fn new(n_mu: usize, n_phi: usize) -> Self {
 		assert!(n_mu >= 1 && n_phi >= 1, "quadrature orders must be >= 1");
 		let (mu64, wmu) = gauss_legendre_01(n_mu);
+		let mu1d: Vec<f32> = mu64.iter().map(|&m| m as f32).collect();
+		let w_mu: Vec<f32> = wmu.iter().map(|&w| w as f32).collect();
 		let dphi = 2.0 * PI / n_phi as f64;
 		let m = n_mu * n_phi;
 		let mut mu = vec![0.0f32; m];
@@ -78,7 +82,7 @@ impl HemisphereQuad {
 			for j in 0..n_phi {
 				let phi = dphi * j as f64;
 				let s = i * n_phi + j;
-				mu[s] = mui as f32;
+				mu[s] = mu1d[i];
 				u[s] = (rho * phi.cos()) as f32;
 				v[s] = (rho * phi.sin()) as f32;
 				omega[s] = wi as f32;
@@ -87,6 +91,8 @@ impl HemisphereQuad {
 		Self {
 			n_mu,
 			n_phi,
+			mu1d,
+			w_mu,
 			mu,
 			u,
 			v,
@@ -176,6 +182,15 @@ mod tests {
 		assert_eq!(q.n_samples(), 60);
 		assert_eq!(q.n_mu, 5);
 		assert_eq!(q.n_phi, 12);
+		assert_eq!(q.mu1d.len(), 5);
+		assert_eq!(q.w_mu.len(), 5);
+		let wsum: f64 = q.w_mu.iter().map(|w| *w as f64).sum();
+		close(wsum, 1.0, 1e-6);
+		for i in 0..5 {
+			for j in 0..12 {
+				assert_eq!(q.mu[i * 12 + j], q.mu1d[i]);
+			}
+		}
 	}
 
 	#[test]

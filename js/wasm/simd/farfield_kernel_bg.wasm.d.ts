@@ -76,6 +76,7 @@ export const farfieldkernel_prepare: (a: number, b: number, c: number) => void;
 export const farfieldkernel_set_inputs: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => void;
 export const farfieldkernel_take_total: (a: number) => [number, number];
 export const radiatedpowerkernel_compute: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
+export const radiatedpowerkernel_compute_j0: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
 export const radiatedpowerkernel_fill_isolated: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
 export const radiatedpowerkernel_fill_isolated_range: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
 export const radiatedpowerkernel_form_gram: (a: number) => void;

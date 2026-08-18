@@ -56,6 +56,7 @@ export class RadiatedPowerKernel {
     free(): void;
     [Symbol.dispose](): void;
     compute(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number): void;
+    compute_j0(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number): void;
     fill_isolated(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number): void;
     fill_isolated_range(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number, sample0: number, sample_count: number): void;
     form_gram(): void;
@@ -161,6 +162,7 @@ export interface InitOutput {
     readonly farfieldkernel_set_inputs: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => void;
     readonly farfieldkernel_take_total: (a: number) => [number, number];
     readonly radiatedpowerkernel_compute: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
+    readonly radiatedpowerkernel_compute_j0: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
     readonly radiatedpowerkernel_fill_isolated: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
     readonly radiatedpowerkernel_fill_isolated_range: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
     readonly radiatedpowerkernel_form_gram: (a: number) => void;

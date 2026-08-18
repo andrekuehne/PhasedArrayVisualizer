@@ -1,3 +1,4 @@
+mod bessel;
 mod element;
 mod kernel;
 mod metrics;
@@ -120,6 +121,18 @@ impl RadiatedPowerKernel {
 	) {
 		self.state
 			.compute(x, y, frequency_scale, element_kind, element_n);
+	}
+
+	pub fn compute_j0(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		element_kind: u32,
+		element_n: f32,
+	) {
+		self.state
+			.compute_j0(x, y, frequency_scale, element_kind, element_n);
 	}
 
 	pub fn take_re(&self) -> Vec<f32> {

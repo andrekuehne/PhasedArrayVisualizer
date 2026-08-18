@@ -1,8 +1,8 @@
 # Radiated-power Gram (WASM status)
 
-Handoff for [approximate_matched_basis.md](approximate_matched_basis.md). **Only §5 is implemented:** isolated fields from array geometry plus the existing element factor, then the Hermitian radiated-power matrix \(P_H\). Match, \(S\), \(T\), and \(F^\mathrm{emb}\) are not started. There is no visualizer UI.
+Handoff for [approximate_matched_basis.md](approximate_matched_basis.md). **§5 is implemented** two ways: the general φ-dependent product kernel, and an axisymmetric \(J_0\) fast path. Isolated fields from array geometry plus the existing element factor, then the Hermitian radiated-power matrix \(P_H\). Match, \(S\), \(T\), and \(F^\mathrm{emb}\) are not started. There is no visualizer UI.
 
-Intent: keep a **φ-dependent** product quadrature as the general kernel (needed later for rotated / polarized patterns). Axisymmetric \(J_0\) collapse is documented as a fast path, not built.
+Intent: keep the **φ-dependent** product quadrature as the general kernel (needed later for rotated / polarized patterns). Do not auto-switch `compute()` or `runPradJob` to J0. Use `compute_j0` only for planar axisymmetric \(D(\mu)\).
 
 ---
 
@@ -59,13 +59,14 @@ where \(D_\lambda\) is the array electrical diameter in wavelengths.
 
 | Path | Role |
 | --- | --- |
-| [wasm/src/quadrature.rs](../wasm/src/quadrature.rs) | Gauss–Legendre + `HemisphereQuad` |
-| [wasm/src/prad.rs](../wasm/src/prad.rs) | Isolated \(A\), blocked Hermitian Gram, `P0` |
+| [wasm/src/quadrature.rs](../wasm/src/quadrature.rs) | Gauss–Legendre + `HemisphereQuad` (1-D μ kept for J0) |
+| [wasm/src/bessel.rs](../wasm/src/bessel.rs) | f32 \(J_0\) (fdlibm `j0f`) |
+| [wasm/src/prad.rs](../wasm/src/prad.rs) | Isolated \(A\), blocked Hermitian Gram, `P0`, J0 unique-ρ Gram |
 | [wasm/src/lib.rs](../wasm/src/lib.rs) | `RadiatedPowerKernel` wasm-bindgen |
 | [js/wasm/farfield-worker.js](../js/wasm/farfield-worker.js) | Same worker: far-field tiles **and** `run_prad` panels. Browser Dedicated Worker or Node `worker_threads` |
 | [js/wasm/farfield-pool.js](../js/wasm/farfield-pool.js) | `runPradJob`, `mergeGrams`, `pradWorkerCount`, `stopFarfieldPool`; Node can pass `{Worker, wasmPath, workers}` |
-| [tests/prad-gram.test.js](../tests/prad-gram.test.js) | Accuracy + panel/worker merge |
-| [tests/prad-bench.test.js](../tests/prad-bench.test.js) | Main-thread and worker timings through \(64\times 64\) |
+| [tests/prad-gram.test.js](../tests/prad-gram.test.js) | Accuracy + panel/worker merge + J0 vs product |
+| [tests/prad-bench.test.js](../tests/prad-bench.test.js) | Main-thread product/J0 and worker timings through \(64\times 64\) |
 
 Rebuild after Rust changes: `./wasm/build.ps1` (simd + scalar into `js/wasm/`).
 
@@ -82,6 +83,7 @@ fill_isolated(x, y, frequency_scale, element_kind, element_n)
 fill_isolated_range(..., sample0, sample_count)  # sample_count==0 → remainder
 form_gram()
 compute(...)                    # fill_isolated + form_gram
+compute_j0(...)                 # axisymmetric planar fast path (Gauss-μ only)
 take_re() / take_im()           # row-major N×N f32
 n_samples()                     # full quadrature M = n_mu*n_phi
 n_elements()
@@ -90,6 +92,31 @@ n_elements()
 `form_gram` uses the **current** panel width of \(A\) (after a range fill, that is \(M/W\), not full \(M\)). Each panel’s \(P\) is already scaled by \(P_0/4\pi\); **summing panels** is the full Gram.
 
 Geometry: `x`, `y` as `Float32Array`, wavelengths. f32 throughout.
+
+---
+
+## J0 fast path (implemented)
+
+For co-aligned planar elements with \(D=D(\mu)\) only, the φ integral is exact:
+
+\[
+(P_H)_{pq}=\frac{P_0}{2}\int_0^1 D(\mu)\,J_0\!\big(k\rho_{pq}\sqrt{1-\mu^2}\big)\,d\mu,
+\]
+
+\(\rho_{pq}=\sqrt{(x_p-x_q)^2+(y_p-y_q)^2}\). Same Gauss-μ as the product kernel (`HemisphereQuad.mu1d` / `w_mu`). Result is real symmetric; imag is stored as zeros.
+
+`compute_j0(x, y, frequency_scale, element_kind, element_n)`:
+
+- Requires a prior `set_quadrature`; uses \(n_\mu\) only, ignores \(n_\phi\).
+- Does **not** fill \(A\). Same `take_re` / `take_im` buffers as `compute`.
+- Unique-ρ cache keyed by \(\rho^2\) f32 bits (`dx*dx + dy*dy`), so lattice reflections \((3,4)\)/\((4,3)\) hit. \(\rho=0\) short-circuits to \(\sum c_i = P_0\) (isotropic Gauss-μ is exact).
+- f32 \(J_0\) is fdlibm `j0f` in [wasm/src/bessel.rs](../wasm/src/bessel.rs). μ-sum in f64, store f32.
+- HashMap uses a deterministic hasher (wasm32 has no `getrandom`).
+- Cost \(O(U n_\mu + N^2)\) with \(U\ll N^2/2\) on rectangular lattices. At large \(N\) the pair loop that writes \(P_H\) dominates; time is almost independent of \(n_\mu\).
+
+J0 is the exact φ integral; the product kernel approximates φ with trapezoid \(n_\phi\). They agree as \(n_\phi\to\infty\) at **fixed** \(n_\mu\). Tests compare J0(\(n_\mu\)) to product(\(n_\mu\), large \(n_\phi\)), not to a coarse φ grid.
+
+Workers stay on the product / sample-panel path. Do not worker-split J0 unless φ-dependent patterns are dropped.
 
 ---
 
@@ -121,7 +148,7 @@ node --test tests/prad-gram.test.js
 node --test tests/prad-bench.test.js
 ```
 
-Rust covers \(N=1\) power, coincident/far pairs, Hermitian, quadrature convergence, naive Gram, **panel sum = full Gram**. JS repeats that on simd/scalar WASM and checks sequential + real worker merge vs main thread.
+Rust covers \(N=1\) power, coincident/far pairs, Hermitian, quadrature convergence, naive Gram, **panel sum = full Gram**, and **J0 vs product** (same \(n_\mu\), large \(n_\phi\)) plus unique-ρ collapse on an 8×8 lattice. JS repeats that on simd/scalar WASM and checks sequential + real worker merge vs main thread.
 
 ---
 
@@ -129,15 +156,28 @@ Rust covers \(N=1\) power, coincident/far pairs, Hermitian, quadrature convergen
 
 Rectangular grids, \(0.5\lambda\) spacing, isotropic hemisphere, `frequency_scale=1`. \(M=n_\mu n_\phi\). SIMD unless noted. Workers: 8 started; 64×64 uses 4 because of the Gram-memory cap.
 
+Product kernel (fill \(A\) is cheap; **Gram is the cost**):
+
 | array | \(N\) | \(M\) | main SIMD | workers SIMD | speedup |
 | --- | --- | --- | --- | --- | --- |
-| 8×8 | 64 | 2048 | 2.4 ms | 1.0 ms | — |
-| 16×16 | 256 | 2048 | 54 ms | 10 ms | ~5× |
-| 32×32 | 1024 | 2048 | 0.95 s | 181 ms | ~5× |
-| 64×64 | 4096 | 512 | 5.5 s | 2.0 s | ~2.8× |
-| 64×64 | 4096 | 2048 | **63 s** | **15.3 s** | ~4× |
+| 8×8 | 64 | 2048 | 2.3 ms | 0.9 ms | — |
+| 16×16 | 256 | 2048 | 42 ms | 9.2 ms | ~5× |
+| 32×32 | 1024 | 2048 | 0.95 s | 142 ms | ~7× |
+| 64×64 | 4096 | 512 | 5.5 s | 2.1 s | ~2.6× |
+| 64×64 | 4096 | 2048 | **56 s** | **12.8 s** | ~4× |
 
-Fill \(A\) is cheap; **Gram is the cost**. Scalar is ~1.5–2× slower than SIMD on the Gram. Workers change wall-clock, not \(O(N^2 M)\).
+Scalar product Gram is ~1.5–2× slower than SIMD. Workers change wall-clock, not \(O(N^2 M)\).
+
+J0 fast path, main thread (SIMD ≈ scalar; \(n_\phi\) unused):
+
+| array | \(N\) | \(n_\mu\) | J0 | vs product \(M=2048\) |
+| --- | --- | --- | --- | --- |
+| 8×8 | 64 | 16–32 | ~0.1 ms | — |
+| 16×16 | 256 | 16–32 | ~1–2 ms | ~20× |
+| 32×32 | 1024 | 16–32 | ~63 ms | ~15× |
+| 64×64 | 4096 | 16 or 32 | **~2.5 s** | ~22× |
+
+J0 time is almost independent of \(n_\mu\): unique-\(\rho\) hits, then the \(N^2\) write of \(P_H\) dominates.
 
 Suggested default orders vs electrical size were **not** used in the bench; 32/64 is a moderate grid, not sized to a 64×64 aperture (\(D_\lambda\sim 32\) would want larger \(M\)).
 
@@ -147,21 +187,16 @@ Suggested default orders vs electrical size were **not** used in the bench; 32/6
 
 1. **Visualizer UI** — geometry / element / frequency_scale → `runPradJob` or main-thread kernel. Pool already starts with far-field WASM init.
 2. **Method §6–11** — \(R=2 Z_\mathrm{ref} P_H\), real \(z_0\) match, \(S\) and \(T\), \(F^\mathrm{emb}=T^T F^\mathrm{iso}\), power-balance checks. \(O(N^3)\) after the Gram; need to **keep** \(A\) or \(F^\mathrm{iso}\) on the quadrature grid for mixing (today \(A\) is discarded after `form_gram` except inside the kernel).
-3. **φ-dependent / polarized elements** — product grid is the right layout (`N×M`, later \(N\times 2M\)). `fill_amp` currently uses \(D(\mu)\) only.
-4. **Optional \(J_0\) fast path** (axisymmetric \(D(\mu)\), planar arrays only):
-
-   \[
-   (P_H)_{pq}=\frac{P_0}{2}\int_0^1 D(\mu)\,J_0\!\big(k\rho_{pq}\sqrt{1-\mu^2}\big)\,d\mu.
-   \]
-
-   Real, depends only on distance; unique-\(\rho\) cache on rectangular lattices. Keep Gauss-μ, φ as the general kernel and as a check. Do not replace the worker path if φ-dependent patterns remain a requirement.
-5. **f64 Gram** if later \(P_\mathrm{loss}\) residuals are too large; hot kernel is f32 to match the far-field crate.
+3. **φ-dependent / polarized elements** — product grid is the right layout (`N×M`, later \(N\times 2M\)). `fill_amp` currently uses \(D(\mu)\) only. Workers stay on this path.
+4. **f64 Gram** if later \(P_\mathrm{loss}\) residuals are too large; hot kernel is f32 to match the far-field crate.
 
 ---
 
 ## Design constraints for a follow-on agent
 
-- Do not compute \(P_H\) on the plot mesh; use the hemisphere product quadrature.
+- Do not compute \(P_H\) on the plot mesh; use the hemisphere product quadrature (or J0, which uses the same Gauss-μ).
 - Do not assume the visualizer’s isotropic apply (it does not zero the back hemisphere on plots). The Gram uses hemispheric \(D=2\).
-- Preserve a sample-panel / \(A A^H\) path for general patterns even if \(J_0\) is added.
+- Preserve the sample-panel / \(A A^H\) path for general / φ-dependent / polarized patterns. J0 is optional and planar-axisymmetric only.
+- Do not auto-switch `compute()` or `runPradJob` to J0. Do not drop the worker product path.
+- For method §9 mixing, `compute_j0` never builds \(A\); keep using `fill_isolated` if \(F^\mathrm{iso}\) is needed on the quadrature grid.
 - Rebuild both wasm artifacts; node tests load `js/wasm/simd` and `js/wasm/scalar`.

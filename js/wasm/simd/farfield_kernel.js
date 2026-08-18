@@ -534,6 +534,20 @@ export class RadiatedPowerKernel {
      * @param {number} element_kind
      * @param {number} element_n
      */
+    compute_j0(x, y, frequency_scale, element_kind, element_n) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_compute_j0(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, element_kind, element_n);
+    }
+    /**
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} frequency_scale
+     * @param {number} element_kind
+     * @param {number} element_n
+     */
     fill_isolated(x, y, frequency_scale, element_kind, element_n) {
         const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;

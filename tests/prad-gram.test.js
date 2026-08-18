@@ -76,6 +76,18 @@ describe('WASM radiated-power Gram', () => {
 				};
 			}
 
+			function computeJ0(x, y, freq, elemKind, elemN, nMu, nPhi){
+				const k = kernels[kind];
+				k.set_quadrature(nMu, nPhi);
+				k.compute_j0(x, y, freq, elemKind, elemN);
+				return {
+					re: k.take_re(),
+					im: k.take_im(),
+					n: k.n_elements(),
+					m: k.n_samples(),
+				};
+			}
+
 			test('N=1 isotropic radiates P0', () => {
 				const {re, im, n, m} = compute(
 					new Float32Array([0]),
@@ -165,6 +177,52 @@ describe('WASM radiated-power Gram', () => {
 				assert.ok(Math.abs(coarse.re[0] - fine.re[0]) < 5e-4, 'P11 Δ');
 				assert.ok(Math.abs(coarse.re[1] - fine.re[1]) < 5e-3, 'P12 Δ');
 			});
+
+			test('J0 N=1 isotropic radiates P0', () => {
+				const {re, im, n} = computeJ0(
+					new Float32Array([0]),
+					new Float32Array([0]),
+					1,
+					PATTERN_ISOTROPIC,
+					0,
+					8,
+					16
+				);
+				assert.equal(n, 1);
+				close(re[0], P0, 2e-6, 'J0 P11');
+				close(im[0], 0, 0, 'J0 P11 im');
+			});
+
+			test('J0 two coincident elements', () => {
+				const {re, im, n} = computeJ0(
+					new Float32Array([0.3, 0.3]),
+					new Float32Array([0.1, 0.1]),
+					1,
+					PATTERN_ISOTROPIC,
+					0,
+					8,
+					16
+				);
+				assert.equal(n, 2);
+				close(re[0], P0, 2e-6, 'J0 P11');
+				close(re[3], P0, 2e-6, 'J0 P22');
+				close(re[1], P0, 2e-6, 'J0 P12');
+				close(im[1], 0, 0, 'J0 P12 im');
+			});
+
+			test('J0 matches product Gram at large n_phi', () => {
+				const x = new Float32Array([0, 0.5, 1.0, 0.25]);
+				const y = new Float32Array([0, 0.25, -0.25, 0.4]);
+				const j0 = computeJ0(x, y, 1.1, PATTERN_COS_N, 0.5, 16, 2);
+				const prod = compute(x, y, 1.1, PATTERN_COS_N, 0.5, 16, 64);
+				assert.equal(j0.re.length, prod.re.length);
+				let max = 0;
+				for (let i = 0; i < j0.re.length; i++){
+					max = Math.max(max, Math.abs(j0.re[i] - prod.re[i]));
+					close(j0.im[i], 0, 0, `J0 im[${i}]`);
+				}
+				assert.ok(max < 1e-3, `J0 vs product max|Δre|=${max}`);
+			});
 		});
 	}
 
@@ -185,6 +243,25 @@ describe('WASM radiated-power Gram', () => {
 			max = Math.max(max, Math.abs(reS[i] - reC[i]), Math.abs(imS[i] - imC[i]));
 		}
 		assert.ok(max < 2e-4, `simd vs scalar max|Δ|=${max}`);
+	});
+
+	test('SIMD and scalar J0 Gram agree', () => {
+		const x = new Float32Array([0, 0.5, 1.0, 0.25]);
+		const y = new Float32Array([0, 0.25, -0.25, 0.4]);
+		for (const k of Object.values(kernels)){
+			k.set_quadrature(16, 24);
+			k.compute_j0(x, y, 1.1, PATTERN_COS_N, 0.5);
+		}
+		const reS = kernels.simd.take_re();
+		const imS = kernels.simd.take_im();
+		const reC = kernels.scalar.take_re();
+		const imC = kernels.scalar.take_im();
+		assert.equal(reS.length, reC.length);
+		let max = 0;
+		for (let i = 0; i < reS.length; i++){
+			max = Math.max(max, Math.abs(reS[i] - reC[i]), Math.abs(imS[i] - imC[i]));
+		}
+		assert.ok(max < 1e-6, `J0 simd vs scalar max|Δ|=${max}`);
 	});
 });
 

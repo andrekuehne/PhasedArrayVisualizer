@@ -128,6 +128,34 @@ describe('radiated-power Gram timings', () => {
 		}
 		printTable('Main thread', rows);
 	});
+
+	test('main thread J0 vs product', () => {
+		const rows = [];
+		for (const build of ['simd', 'scalar']){
+			const k = kernels[build];
+			for (const c of CASES){
+				const {x, y} = rectArray(c.nx, c.ny, 0.5, 0.5);
+				k.set_quadrature(c.nMu, c.nPhi);
+				k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
+				const t0 = performance.now();
+				k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
+				const total = performance.now() - t0;
+				rows.push([
+					pad(build, 8),
+					pad(`${c.nx}x${c.ny}`, 8),
+					padL(k.n_elements(), 5),
+					padL(c.nMu, 4),
+					padL(c.nPhi, 4),
+					padL(c.nMu, 6),
+					padL(1, 3),
+					padL('—', 9),
+					padL('—', 9),
+					padL(total.toFixed(1), 9),
+				].join('  '));
+			}
+		}
+		printTable('Main thread J0 (nφ unused; M column is nμ)', rows);
+	});
 });
 
 describe('radiated-power Gram worker timings', () => {
