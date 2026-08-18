@@ -461,32 +461,69 @@ select{
 .results-grid .plot-metrics{
 	grid-template-rows: auto minmax(0, 1fr);
 }
-.plot-metrics .metric-table-wrap{
+.plot-metrics .metrics-groups{
+	height: 100%;
 	min-height: 0;
 	overflow: auto;
 	padding: 4px 2px 2px;
 }
+.plot-metrics .control-row{
+	flex: 1 1 0;
+	min-height: 0;
+}
+.plot-metrics .control-row > div{
+	min-height: 0;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+}
+.plot-metrics .control-row > div > h3{
+	flex-shrink: 0;
+}
 .plot-metrics .metric-table{
-	display: table;
 	width: 100%;
-	height: 100%;
-	text-align: right;
+	flex: 1 1 auto;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
 	border-collapse: collapse;
-	font-size: 0.92rem;
+	font-size: 0.85rem;
+}
+.plot-metrics .metric-table tbody{
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	min-height: 0;
+}
+.plot-metrics .metric-table tr{
+	display: flex;
+	align-items: center;
+	flex: 1 1 0;
+	min-height: 0;
 }
 .plot-metrics .metric-table td{
-	padding: 0.35em 0.7em;
-	border: 1px solid var(--canvas-border-color);
-	vertical-align: middle;
+	padding: 0.25em 0.55em;
+	line-height: 1.25;
 }
 .plot-metrics .metric-table td:first-child{
+	flex: 1 1 auto;
+	min-width: 0;
 	text-align: left;
 	white-space: nowrap;
-	width: 52%;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 .plot-metrics .metric-table td:last-child{
+	flex: 0 1 auto;
+	text-align: right;
+}
+.plot-metrics .metric-table tr:nth-child(odd){
+	background: color-mix(in srgb, var(--text-color) 10%, transparent);
+}
+.plot-metrics .metric-value{
 	font-variant-numeric: tabular-nums;
 	font-weight: 600;
+	white-space: nowrap;
 }
 
 /* ---- Shared plot chrome ---- */
@@ -819,8 +856,5 @@ canvas{
 	}
 	.canvas-full .canvas-footer > div{
 		width: 100%;
-	}
-	.plot-metrics .metric-table td:first-child{
-		white-space: normal;
 	}
 }

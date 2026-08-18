@@ -187,24 +187,118 @@
 				</div>
 				<div class="canvas-container plot-metrics">
 					<div class="canvas-header"><h2>Metrics</h2></div>
-					<div class="metric-table-wrap">
-						<table class="metric-table">
-							<tr><td>Ideal Directivity</td><td id="pa-ideal-directivity"></td></tr>
-							<tr><td>Calculated Directivity</td><td id="pa-calc-directivity"></td></tr>
-							<tr><td>Aperture Efficiency</td><td id="pa-aperture-efficiency"></td></tr>
-							<tr><td>Available Power</td><td id="pa-available-power"></td></tr>
-							<tr><td>Stimulated Power</td><td id="pa-stimulated-power"></td></tr>
-							<tr><td>Power Utilization</td><td id="pa-power-utilization"></td></tr>
-							<tr><td>Peak EIRP</td><td id="pa-peak-eirp"></td></tr>
-							<tr><td id="pa-hpbw-ax1-label">HPBW Axis 1</td><td id="pa-hpbw-ax1"></td></tr>
-							<tr><td id="pa-hpbw-ax2-label">HPBW Axis 2</td><td id="pa-hpbw-ax2"></td></tr>
-							<tr><td>HPBW Large</td><td id="pa-hpbw-large"></td></tr>
-							<tr><td>HPBW Small</td><td id="pa-hpbw-small"></td></tr>
-							<tr><td>Nearest Sidelobe</td><td id="pa-nearest-sll"></td></tr>
-							<tr><td>Largest Sidelobe</td><td id="pa-largest-sll"></td></tr>
-							<tr><td>Area</td><td id="pa-calc-area"></td></tr>
-							<tr><td>Elements</td><td id="pa-element-count"></td></tr>
-						</table>
+					<div class="metrics-groups pa-settings">
+						<div class="control-row">
+							<div>
+								<h3>Aperture</h3>
+								<table class="metric-table">
+									<tr>
+										<td>Ideal Directivity</td>
+										<td id="pa-ideal-directivity" class="metric-value"></td>
+									</tr>
+									<tr>
+										<td>Calculated Directivity</td>
+										<td id="pa-calc-directivity" class="metric-value"></td>
+									</tr>
+									<tr>
+										<td>Aperture Efficiency</td>
+										<td id="pa-aperture-efficiency" class="metric-value"></td>
+									</tr>
+									<tr>
+										<td>Area</td>
+										<td id="pa-calc-area" class="metric-value"></td>
+									</tr>
+									<tr>
+										<td>Elements</td>
+										<td id="pa-element-count" class="metric-value"></td>
+									</tr>
+								</table>
+							</div>
+							<div>
+								<h3>Power</h3>
+								<table class="metric-table">
+									<tr>
+										<td>Available Power</td>
+										<td id="pa-available-power" class="metric-value"></td>
+									</tr>
+									<tr>
+										<td>Stimulated Power</td>
+										<td id="pa-stimulated-power" class="metric-value"></td>
+									</tr>
+									<tr>
+										<td>Power Utilization</td>
+										<td id="pa-power-utilization" class="metric-value"></td>
+									</tr>
+									<tr>
+										<td>Peak EIRP</td>
+										<td id="pa-peak-eirp" class="metric-value"></td>
+									</tr>
+									<tr><td></td><td></td></tr>
+								</table>
+							</div>
+						</div>
+						<div class="control-row">
+							<div>
+								<h3>HPBW</h3>
+								<table class="metric-table">
+									<tr>
+										<td id="pa-hpbw-ax1-label">HPBW Axis 1</td>
+										<td id="pa-hpbw-ax1" class="metric-value"></td>
+									</tr>
+									<tr>
+										<td id="pa-hpbw-ax2-label">HPBW Axis 2</td>
+										<td id="pa-hpbw-ax2" class="metric-value"></td>
+									</tr>
+									<tr>
+										<td>HPBW Large</td>
+										<td id="pa-hpbw-large" class="metric-value"></td>
+									</tr>
+									<tr>
+										<td>HPBW Small</td>
+										<td id="pa-hpbw-small" class="metric-value"></td>
+									</tr>
+									<tr><td></td><td></td></tr>
+								</table>
+							</div>
+							<div>
+								<h3>Sidelobes</h3>
+								<table class="metric-table">
+									<tr>
+										<td>Nearest Sidelobe</td>
+										<td id="pa-nearest-sll" class="metric-value"></td>
+									</tr>
+									<tr>
+										<td>Largest Sidelobe</td>
+										<td id="pa-largest-sll" class="metric-value"></td>
+									</tr>
+									<tr><td></td><td></td></tr>
+									<tr><td></td><td></td></tr>
+									<tr><td></td><td></td></tr>
+								</table>
+							</div>
+						</div>
+						<div class="control-row">
+							<div class="metric-card-dummy">
+								<h3 aria-hidden="true">&nbsp;</h3>
+								<table class="metric-table">
+									<tr><td></td><td></td></tr>
+									<tr><td></td><td></td></tr>
+									<tr><td></td><td></td></tr>
+									<tr><td></td><td></td></tr>
+									<tr><td></td><td></td></tr>
+								</table>
+							</div>
+							<div class="metric-card-dummy">
+								<h3 aria-hidden="true">&nbsp;</h3>
+								<table class="metric-table">
+									<tr><td></td><td></td></tr>
+									<tr><td></td><td></td></tr>
+									<tr><td></td><td></td></tr>
+									<tr><td></td><td></td></tr>
+									<tr><td></td><td></td></tr>
+								</table>
+							</div>
+						</div>
 					</div>
 				</div>
 				<div class="canvas-container" id="pa-geo-canvas-2"></div>
