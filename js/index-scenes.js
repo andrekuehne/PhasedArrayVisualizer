@@ -402,7 +402,6 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 		super.control_changed(key);
 		if (key !== 'farfield-frequency' || this.ff === null) return;
 		this.parent.update_url_parameters();
-		this.parent.build_queue();
 	}
 	/**
 	* Add callable functions to monitor values.

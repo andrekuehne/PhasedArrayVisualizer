@@ -82,20 +82,21 @@ export class ScenePlotFarfield2D extends ScenePlotABC{
 		cmap.changed = false;
 	}
 	build_queue(){
-		this.queue.reset();
-		if (this._needsRescale){
-			this.queue.add('Rescaling farfield...', () => {
-				this.rescale();
+		this.queue.request(() => {
+			if (this._needsRescale){
+				this.queue.add('Rescaling farfield...', () => {
+					this.rescale();
+				});
+			}
+			this.queue.add('Creating farfield colormap...', () => {
+				this.create_colormap();
 			});
-		}
-		this.queue.add('Creating farfield colormap...', () => {
-			this.create_colormap();
+			this.queue.add('Drawing 2D farfield...', () => {
+				this.engine.draw(this.colormap_vals);
+				delete this.colormap_vals;
+			});
+			this.queue.start("&nbsp;");
 		});
-		this.queue.add('Drawing 2D farfield...', () => {
-			this.engine.draw(this.colormap_vals);
-			delete this.colormap_vals;
-		});
-		this.queue.start("&nbsp;");
 	}
 	show_farfield_hover(e){
 		const canvas = this.canvas;

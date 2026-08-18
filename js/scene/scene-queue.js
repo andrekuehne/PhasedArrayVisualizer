@@ -19,6 +19,26 @@ export class SceneQueue{
 			this.process_queue();
 		};
 		this.running = false;
+		this._pendingBuild = null;
+	}
+	/**
+	 * Run `buildFn` now, or keep only the latest callback if a run is already
+	 * in progress. `buildFn` should fill the queue and call `start()`; `reset()`
+	 * is applied here so an in-flight run is never cancelled.
+	 *
+	 * @param {function():void} buildFn
+	 */
+	request(buildFn){
+		this._pendingBuild = buildFn;
+		if (!this.running) this._drainPending();
+	}
+	_drainPending(){
+		if (this.running) return;
+		const pending = this._pendingBuild;
+		if (pending == null) return;
+		this._pendingBuild = null;
+		this.reset();
+		pending();
 	}
 	/**
 	* Add callable object to queue.
@@ -101,6 +121,7 @@ export class SceneQueue{
 			if (this._current === null){
 				this.log(this.finalText, false);
 				this.running = false;
+				this._drainPending();
 				return;
 			}
 			this.log(this._current['text']);

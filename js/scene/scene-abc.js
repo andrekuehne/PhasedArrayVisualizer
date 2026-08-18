@@ -101,11 +101,19 @@ export class SceneObjectABC{
 		this.controls = controls;
 		this.eventTypes = new Set(['control-changed', 'reset']);
 		this.queue = null;
+		this.parent = null;
 		controls.forEach((k) => {
 			this.changed[k] = true;
-			this.find_element(k).addEventListener('change', () => {
+			const ele = this.find_element(k);
+			ele.addEventListener('change', () => {
 				this.control_changed(k);
 			});
+			if (ele.type === 'number'){
+				ele.addEventListener('input', () => {
+					this.control_changed(k);
+					this.request_recompute();
+				});
+			}
 		});
 		this._children = [];
 		this.add_event_types("scene-loaded");
@@ -191,6 +199,19 @@ export class SceneObjectABC{
 	}
 	create_queue(progressElement, statusElement){
 		this.queue = new SceneQueue(progressElement, statusElement);
+	}
+	/**
+	 * Rebuild using this object's queue if it has one, otherwise walk to the
+	 * parent scene. SceneQueue keeps at most one pending rebuild (latest wins).
+	 */
+	request_recompute(){
+		if (this.queue != null && typeof this.build_queue === 'function'){
+			this.build_queue();
+			return;
+		}
+		if (this.parent != null && typeof this.parent.request_recompute === 'function'){
+			this.parent.request_recompute();
+		}
 	}
 	create_popup_overlay(){
 		let ele = document.querySelector("#popup-overlay");

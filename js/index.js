@@ -136,9 +136,10 @@ export class PhasedArrayScene extends SceneParent{
 		this.find_element('largest-sll').textContent = formatSll(m && m.largest_sll_db);
 	}
 	build_queue(){
-		this.queue.reset();
-		this.arrayControl.add_to_queue(this.queue);
-		this.farfieldControl.add_to_queue(this.queue);
-		this.queue.start();
+		this.queue.request(() => {
+			this.arrayControl.add_to_queue(this.queue);
+			this.farfieldControl.add_to_queue(this.queue);
+			this.queue.start();
+		});
 	}
 }

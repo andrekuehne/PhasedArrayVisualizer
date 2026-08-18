@@ -25,7 +25,7 @@ export class ScenePlotABC extends SceneObjectABC{
 			ele.value = Math.abs(v);
 			return v;
 		}
-		ele.addEventListener('change', () => {
+		ele.addEventListener('input', () => {
 			this.min = _val();
 			this.trigger_event('data-min-changed', this.min);
 		})
