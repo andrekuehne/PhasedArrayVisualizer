@@ -1,5 +1,6 @@
 import {linspace} from "../util.js";
-import {extractPatternMetrics, getFarfieldKernel} from "../wasm/init.js";
+import {PATTERN_COS_N} from "./element.js";
+import {applyElementPattern, extractPatternMetrics, getFarfieldKernel} from "../wasm/init.js";
 import {farfieldPoolSize, runFarfieldJob} from "../wasm/farfield-pool.js";
 
 /**
@@ -117,6 +118,8 @@ export class FarfieldABC{
 			y: pa.geometry.y,
 			pha: pha,
 			mag: mag,
+			elementKind: pa.elementPattern?.kind ?? 0,
+			elementN: pa.elementPattern?.n ?? 0,
 		}
 	}
 	/**
@@ -130,6 +133,27 @@ export class FarfieldABC{
 		for (let i2 = 0; i2 < p2; i2++){
 			this.farfield_total[i2] = flat.subarray(i2 * p1, (i2 + 1) * p1);
 		}
+	}
+	/**
+	 * Multiply AF intensity by the element power pattern and refresh `maxValue`.
+	 * @param {number} domain
+	 * @param {ArrayLike<number>} ax1
+	 * @param {ArrayLike<number>} ax2
+	 * @param {ReturnType<FarfieldABC['create_parameters']>} pars
+	 */
+	apply_element_pattern(domain, ax1, ax2, pars){
+		if (this._totalFlat == null) return;
+		const kind = Number(pars.elementKind) || 0;
+		const n = Number(pars.elementN) || 0;
+		if (kind !== PATTERN_COS_N) return;
+		this.maxValue = applyElementPattern(
+			domain,
+			as_f32(ax1),
+			as_f32(ax2),
+			this._totalFlat,
+			kind,
+			n
+		);
 	}
 	/**
 	 * Copy WASM `PatternMetrics` into a plain object and free the wasm handle.
@@ -213,6 +237,7 @@ export class FarfieldABC{
 		yield {text: 'Calculating total...', progress: tiles + 1, max: tiles + 2};
 		this.maxValue = kernel.finalize(pars.x.length);
 		this.wrap_flat_total(kernel.take_total());
+		this.apply_element_pattern(domain, ax1, ax2, pars);
 	}
 	/**
 	 * Tile the WASM array-factor kernel over ax2 rows, using workers when available.
@@ -291,6 +316,7 @@ export class FarfieldABC{
 				else if (ev.kind === 'done'){
 					this.maxValue = ev.result.maxValue;
 					this.wrap_flat_total(ev.result.total);
+					this.apply_element_pattern(domain, ax1, ax2, pars);
 					yield {text: 'Calculating total...', progress: 1, max: 1};
 					return;
 				}

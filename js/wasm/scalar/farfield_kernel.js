@@ -412,6 +412,40 @@ export class PatternMetrics {
 if (Symbol.dispose) PatternMetrics.prototype[Symbol.dispose] = PatternMetrics.prototype.free;
 
 /**
+ * Multiply AF intensity `total` (row-major `i2 * n1 + i1`) by the element
+ * power pattern. Returns the new peak. Cos^n uses `[max(w,0)]^n` and is 0
+ * for invisible/back directions even when `n == 0` (`0^0` would otherwise be 1).
+ * @param {number} domain
+ * @param {Float32Array} ax1
+ * @param {Float32Array} ax2
+ * @param {Float32Array} total
+ * @param {number} kind
+ * @param {number} n
+ * @returns {number}
+ */
+export function apply_element_pattern(domain, ax1, ax2, total, kind, n) {
+    const ptr0 = passArrayF32ToWasm0(ax1, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArrayF32ToWasm0(ax2, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    var ptr2 = passArrayF32ToWasm0(total, wasm.__wbindgen_malloc);
+    var len2 = WASM_VECTOR_LEN;
+    const ret = wasm.apply_element_pattern(domain, ptr0, len0, ptr1, len1, ptr2, len2, total, kind, n);
+    return ret;
+}
+
+/**
+ * Power-conserving cos^n exponent from peak element gain in dBi:
+ * `n = 10^(element_gain/10)/2 - 1`, clamped at 0.
+ * @param {number} gain_dbi
+ * @returns {number}
+ */
+export function element_exponent_from_peak_dbi(gain_dbi) {
+    const ret = wasm.element_exponent_from_peak_dbi(gain_dbi);
+    return ret;
+}
+
+/**
  * @param {number} domain
  * @param {Float32Array} ax1
  * @param {Float32Array} ax2
@@ -431,6 +465,9 @@ export function extract_pattern_metrics(domain, ax1, ax2, total) {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
+        __wbg___wbindgen_copy_to_typed_array_c7f28e53671b41e8: function(arg0, arg1, arg2) {
+            new Uint8Array(arg2.buffer, arg2.byteOffset, arg2.byteLength).set(getArrayU8FromWasm0(arg0, arg1));
+        },
         __wbg___wbindgen_throw_bb96b2010945f0bc: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
@@ -460,6 +497,11 @@ const PatternMetricsFinalization = (typeof FinalizationRegistry === 'undefined')
 function getArrayF32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
+function getArrayU8FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
 }
 
 let cachedFloat32ArrayMemory0 = null;

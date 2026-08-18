@@ -7,6 +7,7 @@ import {FarfieldDomains} from "./phasedarray/farfield.js"
 import {GeometryViews} from "./phasedarray/geometry-views.js"
 import {SteeringDomains} from "./phasedarray/steering.js"
 import {Illuminations} from "./phasedarray/illumination.js"
+import {ElementCosN, ElementTypes, exponentFromPeakDbi, MIN_ELEMENT_GAIN_DBI} from "./phasedarray/element.js"
 import {Tapers} from "./phasedarray/tapers.js"
 import {defaultWatts, formatPower, formatPowerValue, isPowerScope, isPowerUnit, wattsFrom} from "./phasedarray/power.js"
 import {linspace} from "./util.js";
@@ -50,6 +51,7 @@ export class SceneControlPhasedArray extends SceneControl{
 		this.taperControl = new SceneControlAllTapers(this);
 		this.steerControl = new SceneControlSteeringDomain(this);
 		this.illumControl = new SceneControlIllumination(this);
+		this.elementControl = new SceneControlElement(this);
 		this.powerControl = new SceneControlPower(this);
 		this.add_event_types(
 			'phased-array-changed',
@@ -71,11 +73,14 @@ export class SceneControlPhasedArray extends SceneControl{
 		this.geometryControl.add_to_queue(queue);
 		this.taperControl.add_to_queue(queue);
 		this.illumControl.add_to_queue(queue);
+		this.elementControl.add_to_queue(queue);
 
 		if (this.steerControl.calculationWaiting) changeFlag |= CHANGE_PHASE;
 		if (this.taperControl.calculationWaiting) changeFlag |= CHANGE_ATTEN;
 		if (this.changed['phase-bits'] || this.changed['phase-dither']) changeFlag |= CHANGE_PHASEQ;
 		if (this.changed['atten-bits'] || this.changed['atten-lsb']) changeFlag |= CHANGE_ATTENQ;
+
+		if (this.elementControl.calculationWaiting) this.farfieldNeedsCalculation = true;
 
 		if (this.geometryControl.calculationWaiting || this.pa === null){
 			queue.add('Updating array...', () => {
@@ -87,6 +92,11 @@ export class SceneControlPhasedArray extends SceneControl{
 			)
 			changeFlag |= CHANGE_ILLUM | CHANGE_ATTEN | CHANGE_PHASE;
 			this.farfieldNeedsCalculation = true;
+		}
+		if (this.elementControl.calculationWaiting || this.geometryControl.calculationWaiting || this.pa === null){
+			queue.add('Setting element pattern...', () => {
+				this.pa.elementPattern = this.elementControl.activeElement;
+			});
 		}
 		if (this.pa !== null && this.pa.requestUpdate) changeFlag |= CHANGE_PA;
 		if (this.illumControl.calculationWaiting || (changeFlag & CHANGE_ILLUM)){
@@ -635,6 +645,116 @@ export class SceneControlIllumination extends SceneControlWithSelectorAutoBuild{
 		if (this.calculationWaiting){
 			queue.add('Building illumination...', () => {
 					this.activeIllumination = this.build_active_object();
+				}
+			)
+		}
+	}
+}
+
+export class SceneControlElement extends SceneControlWithSelectorAutoBuild{
+	static autoUpdateURL = false;
+	constructor(parent){
+		const host = parent.find_element('element-controls');
+		super(parent, 'element-type', ElementTypes, host);
+		this.activeElement = null;
+
+		const div = document.createElement('div');
+		div.classList = "form-group";
+		div.id = parent.prepend + "-element-n-div";
+		const lbl = document.createElement('label');
+		lbl.setAttribute('for', parent.prepend + "-element-n");
+		lbl.innerHTML = "n";
+		const ele = document.createElement('input');
+		ele.type = 'number';
+		ele.id = parent.prepend + "-element-n";
+		ele.name = ele.id;
+		ele.readOnly = true;
+		ele.tabIndex = -1;
+		div.appendChild(lbl);
+		div.appendChild(ele);
+		host.appendChild(div);
+		this.nDiv = div;
+		this.nInput = ele;
+		this.addEventListener('active-class-changed', () => {
+			this.release_gain_html_min();
+			this.update_n_display();
+		});
+		this.install_gain_editing();
+		this.update_n_display();
+	}
+	install_gain_editing(){
+		const gainEle = this.find_element('element-gain');
+		const maxG = ElementCosN.controls['element-gain'].max;
+		const typing = (ev) => {
+			const t = ev.inputType || '';
+			return t.startsWith('insertText') || t.startsWith('insertFromPaste') || t.startsWith('delete');
+		};
+		gainEle.addEventListener('focus', () => {
+			gainEle.min = 0;
+		});
+		gainEle.addEventListener('input', (ev) => {
+			if (typing(ev)){
+				this.update_n_display();
+				return;
+			}
+			this.clamp_gain_field();
+			this.update_n_display();
+		});
+		gainEle.addEventListener('blur', () => {
+			this.clamp_gain_field(true);
+			gainEle.min = 0;
+			gainEle.max = maxG;
+			this.update_n_display();
+		});
+		this.release_gain_html_min();
+		gainEle.max = maxG;
+	}
+	release_gain_html_min(){
+		const gainEle = this.find_element('element-gain', false);
+		if (gainEle == null) return;
+		gainEle.min = 0;
+	}
+	clamp_gain_field(fillEmpty){
+		const gainEle = this.find_element('element-gain');
+		const maxG = ElementCosN.controls['element-gain'].max;
+		const raw = String(gainEle.value).trim();
+		if (raw === '' || raw === '-' || raw === '.' || raw === '-.'){
+			if (!fillEmpty) return;
+			gainEle.value = MIN_ELEMENT_GAIN_DBI.toFixed(2);
+			return;
+		}
+		let v = Number(raw);
+		if (!Number.isFinite(v)){
+			if (!fillEmpty) return;
+			gainEle.value = MIN_ELEMENT_GAIN_DBI.toFixed(2);
+			return;
+		}
+		if (v < MIN_ELEMENT_GAIN_DBI) v = MIN_ELEMENT_GAIN_DBI;
+		if (v > maxG) v = maxG;
+		const shown = v <= MIN_ELEMENT_GAIN_DBI + 1e-9 ? MIN_ELEMENT_GAIN_DBI.toFixed(2) : String(v);
+		if (gainEle.value !== shown) gainEle.value = shown;
+	}
+	control_changed(key){
+		super.control_changed(key);
+		this.activeElement = null;
+		this.update_n_display();
+	}
+	update_n_display(){
+		const isCos = this.selected_class() === ElementCosN;
+		this.nDiv.style.display = isCos ? "flex" : "none";
+		if (!isCos) return;
+		const gainEle = this.find_element('element-gain');
+		const raw = gainEle ? String(gainEle.value).trim() : '';
+		const gain = Number(raw);
+		const g = Number.isFinite(gain) ? Math.max(gain, MIN_ELEMENT_GAIN_DBI) : ElementCosN.controls['element-gain'].default;
+		this.nInput.value = exponentFromPeakDbi(g).toFixed(3);
+	}
+	get calculationWaiting(){ return this.activeElement === null; }
+	add_to_queue(queue){
+		if (this.calculationWaiting){
+			queue.add('Building element pattern...', () => {
+					this.activeElement = this.build_active_object();
+					this.update_n_display();
 				}
 			)
 		}

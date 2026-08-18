@@ -409,25 +409,34 @@ export class SceneControlWithSelector extends SceneControl{
 			const kk = this.wrap_prepend_s(x);
 			const def = kls.controls[x];
 			const ele = this.find_element(kk);
+			const raw = String(ele.value).trim();
 			let v = ele.value;
 			if (def !== undefined){
 				const dtype = def['type'];
-				if (dtype == 'float') v = Number(v);
-				else if (dtype == 'int') v = parseInt(v);
+				const focused = document.activeElement === ele;
+				const incomplete = raw === '' || raw === '-' || raw === '.' || raw === '-.';
+				if (dtype == 'float') v = incomplete ? NaN : Number(v);
+				else if (dtype == 'int') v = incomplete ? NaN : parseInt(v, 10);
 				else if (dtype === undefined);
 				else throw Error(`Unknown data type ${dtype}`);
+
+				if (!Number.isFinite(v)){
+					v = def['default'];
+					args.push(v);
+					return;
+				}
 
 				const min = def['min'];
 				if (min === undefined);
 				else if (v < min){
 					v = min;
-					ele.value = v;
+					if (!focused) ele.value = v;
 				}
 				const max = def['max'];
 				if (max === undefined);
 				else if (v > max){
 					v = max;
-					ele.value = v;
+					if (!focused) ele.value = v;
 				}
 			}
 			args.push(v);

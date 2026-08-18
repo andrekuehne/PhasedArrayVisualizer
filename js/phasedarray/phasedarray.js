@@ -45,6 +45,7 @@ export class PhasedArray{
 
 		this.requestUpdate = true;
 		this.illum = null;
+		this.elementPattern = null;
 		this.powerWeightSum = 0;
 	}
 	set_theta_phi(theta, phi){

@@ -12,6 +12,10 @@ const SIMD_TEST = new Uint8Array([
 let kernel = null;
 /** @type {typeof import('./simd/farfield_kernel.js').extract_pattern_metrics | null} */
 let extractFn = null;
+/** @type {typeof import('./simd/farfield_kernel.js').apply_element_pattern | null} */
+let applyElementFn = null;
+/** @type {typeof import('./simd/farfield_kernel.js').element_exponent_from_peak_dbi | null} */
+let exponentFn = null;
 
 export function wasmSupportsSimd(){
 	try {
@@ -47,6 +51,35 @@ export function extractPatternMetrics(domain, ax1, ax2, total){
 	return extractFn(domain, ax1, ax2, total);
 }
 
+/**
+ * Multiply far-field intensity by an element power pattern. Mutates `total`.
+ * @param {number} domain
+ * @param {Float32Array} ax1
+ * @param {Float32Array} ax2
+ * @param {Float32Array} total
+ * @param {number} kind
+ * @param {number} n
+ * @returns {number} peak intensity after apply
+ */
+export function applyElementPattern(domain, ax1, ax2, total, kind, n){
+	if (applyElementFn === null){
+		throw new Error('Farfield WASM kernel is not initialized.');
+	}
+	return applyElementFn(domain, ax1, ax2, total, kind, n);
+}
+
+/**
+ * Power-conserving cos^n exponent from peak element gain in dBi.
+ * @param {number} gainDbi
+ * @returns {number}
+ */
+export function elementExponentFromPeakDbi(gainDbi){
+	if (exponentFn === null){
+		throw new Error('Farfield WASM kernel is not initialized.');
+	}
+	return exponentFn(gainDbi);
+}
+
 export async function initFarfieldWasm(){
 	const useSimd = wasmSupportsSimd();
 	const mod = useSimd
@@ -55,6 +88,8 @@ export async function initFarfieldWasm(){
 	await mod.default();
 	kernel = new mod.FarfieldKernel();
 	extractFn = mod.extract_pattern_metrics;
+	applyElementFn = mod.apply_element_pattern;
+	exponentFn = mod.element_exponent_from_peak_dbi;
 	try {
 		await startFarfieldPool({simd: useSimd});
 	}

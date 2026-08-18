@@ -45,6 +45,19 @@ export class PatternMetrics {
     peak_i2: number;
 }
 
+/**
+ * Multiply AF intensity `total` (row-major `i2 * n1 + i1`) by the element
+ * power pattern. Returns the new peak. Cos^n uses `[max(w,0)]^n` and is 0
+ * for invisible/back directions even when `n == 0` (`0^0` would otherwise be 1).
+ */
+export function apply_element_pattern(domain: number, ax1: Float32Array, ax2: Float32Array, total: Float32Array, kind: number, n: number): number;
+
+/**
+ * Power-conserving cos^n exponent from peak element gain in dBi:
+ * `n = 10^(element_gain/10)/2 - 1`, clamped at 0.
+ */
+export function element_exponent_from_peak_dbi(gain_dbi: number): number;
+
 export function extract_pattern_metrics(domain: number, ax1: Float32Array, ax2: Float32Array, total: Float32Array): PatternMetrics;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -101,6 +114,8 @@ export interface InitOutput {
     readonly __wbg_set_patternmetrics_peak_ax2: (a: number, b: number) => void;
     readonly __wbg_set_patternmetrics_peak_i1: (a: number, b: number) => void;
     readonly __wbg_set_patternmetrics_peak_i2: (a: number, b: number) => void;
+    readonly apply_element_pattern: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any, i: number, j: number) => number;
+    readonly element_exponent_from_peak_dbi: (a: number) => number;
     readonly extract_pattern_metrics: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly farfieldkernel_accumulate_tile: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly farfieldkernel_finalize: (a: number, b: number) => number;

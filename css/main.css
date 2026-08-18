@@ -320,6 +320,17 @@ select{
 #pa-taper-y-group{
 	margin: 4px 0 0;
 }
+#pa-element-n{
+	appearance: textfield;
+	-moz-appearance: textfield;
+	opacity: 0.85;
+	pointer-events: none;
+}
+#pa-element-n::-webkit-outer-spin-button,
+#pa-element-n::-webkit-inner-spin-button{
+	-webkit-appearance: none;
+	margin: 0;
+}
 .action-buttons{
 	display: flex;
 	gap: 8px;

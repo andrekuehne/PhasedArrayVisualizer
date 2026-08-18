@@ -98,6 +98,11 @@
 						</div>
 					</div>
 					<div class="control-row">
+						<div id="pa-element-controls">
+							<h3>Element</h3>
+						</div>
+					</div>
+					<div class="control-row">
 						<div>
 							<h3>Power</h3>
 							<div class="form-group" id="pa-power-div">
@@ -250,7 +255,7 @@
 					<p>This demo was created by <a href="https://github.com/jasondurbin" target="_blank">Jason Durbin</a>, who is <a href="https://www.linkedin.com/in/jasondurbin/" target="_blank">currently an antenna engineer at Amazon Leo</a>.
 					<h2>Usage and Notes</h2>
 					<ul>
-						<li>Antenna elements are assumed to be isotropic. However, the directivity calculation assumes half-hemisphere radiation (e.g. no back lobes). Therefore, the computed directivity will be 3 dBi higher than using pure isotropic. Said in different terms, the individual element gain is +3.0 dBi.</li>
+						<li><strong id="help-element">Element</strong> [new Aug. 2026] defaults to isotropic over the front hemisphere, so calculated directivity is about +3 dBi for a uniform pattern. The Element section can instead apply a cos<sup>n</sup> power pattern: you set the peak broadside gain in dBi (minimum 3.01 dBi, i.e. 10·log<sub>10</sub>2), and n = 10<sup>(G/10)</sup>/2 − 1 is chosen so the pattern conserves power. Cos<sup>n</sup> is zero behind the array, so U/V samples outside the unit circle are dark. That pattern multiplies the array-factor intensity before directivity, EIRP, and beam metrics. Aperture efficiency uses the geometric aperture bound 4πA/λ<sup>2</sup> and can exceed 100% for small arrays with a directive element.</li>
 						<li>The mesh can be made finer by increasing Points. However, increasing the number of points may result in laggy performance.</li>
 						<li>Clicking (or long pressing) elements in the phase/attenuation plots allows you to manually set phase/attenuation. <b>Be sure to select "enable override."</b> Additionally, the attenuation pop-up allows you to disable elements.</li>
 						<li>Hovering (or touching) the 2-D farfield plot or geometry plots will show the value of the plot under the cursor.</li>

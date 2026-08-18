@@ -117,6 +117,13 @@ fn nan_metrics() -> PatternMetrics {
 	}
 }
 
+pub(crate) fn boresight_cosine(domain: u32, a1: f32, a2: f32) -> f32 {
+	match look(domain, a1, a2) {
+		Some(v) => v.z.max(0.0),
+		None => 0.0,
+	}
+}
+
 fn look(domain: u32, a1: f32, a2: f32) -> Option<Vec3> {
 	match domain {
 		DOMAIN_SPHERICAL => {
