@@ -477,8 +477,25 @@ export class SceneControlSteeringDomain extends SceneControlWithSelector{
 	constructor(parent){
 		super(parent, 'steering-domain', SteeringDomains);
 		this._last = this.selected_class();
+		document.getElementById(this.prepend + '-steer-broadside').addEventListener('click', () => {
+			this.reset_to_broadside();
+		});
 	}
 	get calculationWaiting(){return this.changed['theta'] || this.changed['phi'] || this.changed['steering-domain']};
+	reset_to_broadside(){
+		const c1 = this.find_object_map('theta');
+		const c2 = this.find_object_map('phi');
+		c1.set_value(0);
+		c2.set_value(0);
+		c1.ele.dispatchEvent(new Event('change'));
+		c2.ele.dispatchEvent(new Event('change'));
+		let scene = this.parent;
+		while (scene != null && typeof scene.update_url_parameters !== 'function'){
+			scene = scene.parent;
+		}
+		if (scene != null) scene.update_url_parameters();
+		this.request_recompute();
+	}
 	control_changed(key){
 		if (key == this.primaryKey){
 			if (this._last === undefined) return;
