@@ -6,7 +6,7 @@ import {farfieldPoolSize, runFarfieldJob} from "../wasm/farfield-pool.js";
  * @typedef {FarfieldSpherical | FarfieldUV | FarfieldLudwig3} FarfieldHint
  */
 
-const CON_FREQ = {"title": "freq. scale", "type": "float", "default": 1.0, "min": 0.0, "max": 200, "step": 0.1};
+const CON_FREQ = {"title": "freq. scale", "type": "float", "default": 1.0, "min": 0.0, "max": 200, "step": 0.02};
 const CON_POINTS = {'title': "Points", 'type': "int", 'default': 257, 'min': 11, 'max': 2049};
 const DOMAIN_SPHERICAL = 0;
 const DOMAIN_UV = 1;

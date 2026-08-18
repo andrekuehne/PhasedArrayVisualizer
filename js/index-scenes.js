@@ -398,6 +398,12 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 		this.maxMonitors = {};
 		this.add_event_types('farfield-changed', 'farfield-calculation-complete');
 	}
+	control_changed(key){
+		super.control_changed(key);
+		if (key !== 'farfield-frequency' || this.ff === null) return;
+		this.parent.update_url_parameters();
+		this.parent.build_queue();
+	}
 	/**
 	* Add callable functions to monitor values.
 	*

@@ -573,13 +573,13 @@ select{
 	margin-left: 0;
 	padding: 1px 3px;
 }
-.plot-farfield .footer-group input[type="number"]{
+.plot-farfield .footer-group input[type="number"]:not(.ff-spin){
 	appearance: textfield;
 	-moz-appearance: textfield;
 	box-sizing: content-box;
 }
-.plot-farfield .footer-group input[type="number"]::-webkit-outer-spin-button,
-.plot-farfield .footer-group input[type="number"]::-webkit-inner-spin-button{
+.plot-farfield .footer-group input[type="number"]:not(.ff-spin)::-webkit-outer-spin-button,
+.plot-farfield .footer-group input[type="number"]:not(.ff-spin)::-webkit-inner-spin-button{
 	-webkit-appearance: none;
 	margin: 0;
 }
@@ -592,6 +592,17 @@ select{
 	width: 4.8ch;
 	max-width: 4.8ch;
 	min-width: 4.8ch;
+}
+.plot-farfield .footer-group input.ff-spin{
+	width: 4.4em;
+	max-width: 4.4em;
+	min-width: 4.4em;
+	box-sizing: border-box;
+}
+.plot-farfield .footer-group input.ff-spin::-webkit-inner-spin-button,
+.plot-farfield .footer-group input.ff-spin::-webkit-outer-spin-button{
+	opacity: 1;
+	margin: 0;
 }
 .plot-farfield .footer-group select{
 	field-sizing: content;
