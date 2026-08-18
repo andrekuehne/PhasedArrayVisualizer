@@ -293,8 +293,6 @@ export class ScenePlot2DGeometryGeneric extends ScenePlot2DGeometryABC{
 		const update_title = () => {
 			let vkls = this.view_selector.selected_class();
 			let ukls = this.unit_selector.selected_class();
-			this.active_view = null;
-			this.active_unit = null;
 			this.build_queue();
 			header_title.innerHTML = `${vkls.title} ${ukls.user_title}`;
 			if (ukls.show_scale) div_scale.style.display = "";
@@ -336,23 +334,20 @@ export class ScenePlot2DGeometryGeneric extends ScenePlot2DGeometryABC{
 		this.queue.request(() => {
 			if (this.view_selector === undefined) return;
 			if (this.pa === undefined) return;
-			if (this.active_view === null){
-				this.queue.add(`Creating ${this.view_selector.selected_class().title}...`, () => {
-					this.active_view = this.view_selector.build_active_object();
-				});
-			}
-			if (this.active_unit === null){
-				this.queue.add(`Creating ${this.view_selector.selected_class().title} Unit...`, () => {
-					this.active_unit = this.unit_selector.build_active_object();
-					if (!this.active_view.constructor.allow_manual || this.active_unit.constructor.popup_type == null) this.uninstall_popup();
-					else if (this.active_unit.constructor.popup_type == "phase") this.install_phase_popup();
-					else if (this.active_unit.constructor.popup_type == "atten") this.install_atten_popup();
-				});
-			}
-			this.queue.add(`Scaling ${this.view_selector.selected_class().title}...`, () => {
+			const title = this.view_selector.selected_class().title;
+			this.queue.add(`Creating ${title}...`, () => {
+				this.active_view = this.view_selector.build_active_object();
+			});
+			this.queue.add(`Creating ${title} Unit...`, () => {
+				this.active_unit = this.unit_selector.build_active_object();
+				if (!this.active_view.constructor.allow_manual || this.active_unit.constructor.popup_type == null) this.uninstall_popup();
+				else if (this.active_unit.constructor.popup_type == "phase") this.install_phase_popup();
+				else if (this.active_unit.constructor.popup_type == "atten") this.install_atten_popup();
+			});
+			this.queue.add(`Scaling ${title}...`, () => {
 				this._plot_data = this.active_unit.convert_from_view(this.active_view, this.pa, this.min);
 			});
-			this.queue.add(`Drawing ${this.view_selector.selected_class().title}...`, () => {
+			this.queue.add(`Drawing ${title}...`, () => {
 				this.draw();
 			});
 			this.queue.start("&nbsp;");

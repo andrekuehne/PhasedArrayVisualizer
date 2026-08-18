@@ -158,8 +158,16 @@ export class SceneQueue{
 			cont();
 			return;
 		}
-		c['func']();
-		this._current = null;
-		cont();
+		try {
+			c['func']();
+			this._current = null;
+			cont();
+		} catch (err) {
+			console.error(err);
+			if (gen !== this.generation) return;
+			this._current = null;
+			this.log(String(err), true);
+			cont();
+		}
 	}
 }
