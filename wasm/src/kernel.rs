@@ -96,8 +96,8 @@ impl FarfieldState {
 		}
 		match domain {
 			DOMAIN_SPHERICAL => self.accumulate_spherical(frequency_scale, row0, row_end),
-			DOMAIN_UV => self.accumulate_uv(row0, row_end),
-			DOMAIN_LUDWIG3 => self.accumulate_ludwig3(row0, row_end),
+			DOMAIN_UV => self.accumulate_uv(frequency_scale, row0, row_end),
+			DOMAIN_LUDWIG3 => self.accumulate_ludwig3(frequency_scale, row0, row_end),
 			_ => {}
 		}
 	}
@@ -132,25 +132,25 @@ impl FarfieldState {
 		}
 	}
 
-	fn accumulate_uv(&mut self, row0: usize, row_end: usize) {
+	fn accumulate_uv(&mut self, frequency_scale: f32, row0: usize, row_end: usize) {
 		let n1 = self.n1;
-		let two_pi = std::f32::consts::TAU;
+		let sc = std::f32::consts::TAU * frequency_scale;
 		let n_el = self.x.len();
 		for row in row0..row_end {
 			let v = self.ax2[row];
 			let off = row * n1;
 			for i in 0..n_el {
-				let a = self.x[i] * two_pi;
-				let b = self.y[i].mul_add(v * two_pi, self.pha[i]);
+				let a = self.x[i] * sc;
+				let b = self.y[i].mul_add(v * sc, self.pha[i]);
 				let (re_row, im_row) = split_row(&mut self.re, &mut self.im, off, n1);
 				accumulate_linear(n1, self.mag[i], a, b, &self.ax1, re_row, im_row);
 			}
 		}
 	}
 
-	fn accumulate_ludwig3(&mut self, row0: usize, row_end: usize) {
+	fn accumulate_ludwig3(&mut self, frequency_scale: f32, row0: usize, row_end: usize) {
 		let n1 = self.n1;
-		let two_pi = std::f32::consts::TAU;
+		let sc = std::f32::consts::TAU * frequency_scale;
 		self.scratch.clear();
 		self.scratch.resize(n1, 0.0);
 		for (i, &az) in self.ax1.iter().enumerate() {
@@ -165,8 +165,8 @@ impl FarfieldState {
 			for i in 0..n_el {
 				let xxv = self.x[i] * cel;
 				let yyv = self.y[i] * sel;
-				let a = xxv * two_pi;
-				let b = yyv.mul_add(two_pi, self.pha[i]);
+				let a = xxv * sc;
+				let b = yyv.mul_add(sc, self.pha[i]);
 				let (re_row, im_row) = split_row(&mut self.re, &mut self.im, off, n1);
 				accumulate_linear(n1, self.mag[i], a, b, &self.scratch, re_row, im_row);
 			}
@@ -273,7 +273,8 @@ mod tests {
 		let pha = [0.2f32, -0.4];
 		let u = [-1.0f32, -0.5, 0.0, 0.5, 1.0];
 		let v = [-1.0f32, 0.0, 1.0];
-		let two_pi = std::f32::consts::TAU;
+		let freq = 1.7f32;
+		let sc = std::f32::consts::TAU * freq;
 		let mut re_ref = vec![0.0f32; u.len() * v.len()];
 		let mut im_ref = vec![0.0f32; u.len() * v.len()];
 		for i in 0..x.len() {
@@ -281,7 +282,7 @@ mod tests {
 				let xxv = x[i];
 				let yyv = y[i] * v[iv];
 				for iu in 0..u.len() {
-					let phase = (xxv * u[iu] + yyv) * two_pi + pha[i];
+					let phase = (xxv * u[iu] + yyv) * sc + pha[i];
 					let idx = iv * u.len() + iu;
 					re_ref[idx] += mag[i] * phase.cos();
 					im_ref[idx] += mag[i] * phase.sin();
@@ -291,7 +292,7 @@ mod tests {
 		let mut s = FarfieldState::new();
 		s.prepare(u.len() as u32, v.len() as u32);
 		s.set_inputs(&x, &y, &mag, &pha, &u, &v);
-		s.accumulate_tile(DOMAIN_UV, 1.0, 0, v.len() as u32);
+		s.accumulate_tile(DOMAIN_UV, freq, 0, v.len() as u32);
 		for i in 0..re_ref.len() {
 			assert!((s.re[i] - re_ref[i]).abs() < 2e-4);
 			assert!((s.im[i] - im_ref[i]).abs() < 2e-4);

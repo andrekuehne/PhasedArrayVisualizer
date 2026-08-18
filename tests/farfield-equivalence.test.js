@@ -171,7 +171,7 @@ describe('JS vs WASM far-field kernel', () => {
 			},
 		},
 		{
-			name: 'UV 4-element, frequencyScale must not affect geometry',
+			name: 'UV 4-element, frequencyScale=2.5',
 			domain: DOMAIN_UV,
 			freq: 2.5,
 			setup(){
@@ -183,12 +183,12 @@ describe('JS vs WASM far-field kernel', () => {
 					pha: new Float32Array([0.2, -0.4, 0.8, -1.1]),
 					ax1: linspace(-1, 1, 11),
 					ax2: linspace(-1, 1, 5),
-					js: (a) => jsUV(a.x, a.y, a.mag, a.pha, a.ax1, a.ax2),
+					js: (a) => jsUV(a.x, a.y, a.mag, a.pha, a.ax1, a.ax2, 2.5),
 				};
 			},
 		},
 		{
-			name: 'Ludwig3 az/el with mixed amplitudes',
+			name: 'Ludwig3 az/el with mixed amplitudes, frequencyScale=0.8',
 			domain: DOMAIN_LUDWIG3,
 			freq: 0.8,
 			setup(){
@@ -200,7 +200,7 @@ describe('JS vs WASM far-field kernel', () => {
 					pha: steeringPhase(x, y, 20, 15),
 					ax1: linspace(-90 * sc, 90 * sc, 13),
 					ax2: linspace(-90 * sc, 90 * sc, 8),
-					js: (a) => jsLudwig3(a.x, a.y, a.mag, a.pha, a.ax1, a.ax2),
+					js: (a) => jsLudwig3(a.x, a.y, a.mag, a.pha, a.ax1, a.ax2, 0.8),
 				};
 			},
 		},
@@ -248,16 +248,23 @@ describe('JS vs WASM far-field kernel', () => {
 		assert.equal(full.maxValue, tiled.maxValue);
 	});
 
-	test('UV ignores frequencyScale in the geometric kernel', () => {
+	test('UV and Ludwig3 geometric kernels use frequencyScale', () => {
 		const x = new Float32Array([0, 0.7]);
 		const y = new Float32Array([0.2, -0.1]);
 		const mag = ones(2);
 		const pha = new Float32Array([0.5, -0.25]);
 		const u = linspace(-1, 1, 6);
 		const v = linspace(-1, 1, 4);
-		const a = runWasm(simd, DOMAIN_UV, 1.0, x, y, mag, pha, u, v);
-		const b = runWasm(simd, DOMAIN_UV, 3.0, x, y, mag, pha, u, v);
-		assert.equal(maxAbsDiff(a.total, b.total), 0);
+		const uv1 = runWasm(simd, DOMAIN_UV, 1.0, x, y, mag, pha, u, v);
+		const uv3 = runWasm(simd, DOMAIN_UV, 3.0, x, y, mag, pha, u, v);
+		assert.ok(maxAbsDiff(uv1.total, uv3.total) > 1e-3);
+
+		const sc = Math.PI / 180;
+		const az = linspace(-90 * sc, 90 * sc, 7);
+		const el = linspace(-90 * sc, 90 * sc, 5);
+		const l1 = runWasm(simd, DOMAIN_LUDWIG3, 1.0, x, y, mag, pha, az, el);
+		const l08 = runWasm(simd, DOMAIN_LUDWIG3, 0.8, x, y, mag, pha, az, el);
+		assert.ok(maxAbsDiff(l1.total, l08.total) > 1e-3);
 	});
 });
 
