@@ -424,7 +424,7 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 		const arrayControl = this.parent.arrayControl;
 		let needsRecalc = arrayControl.farfieldNeedsCalculation;
 
-		if (this.changed['farfield-ax1-points'] || this.changed['farfield-ax2-points'] || this.ff === null){
+		if (this.changed['farfield-points'] || this.changed['farfield-frequency'] || this.changed['farfield-uv-bound'] || this.changed['farfield-domain'] || this.ff === null){
 			queue.add('Creating farfield mesh...', () => {
 				this.ff = this.build_active_object();
 				this.trigger_event('farfield-changed', this.ff);

@@ -6,7 +6,8 @@ import {farfieldPoolSize, runFarfieldJob} from "../wasm/farfield-pool.js";
  * @typedef {FarfieldSpherical | FarfieldUV | FarfieldLudwig3} FarfieldHint
  */
 
-const CON_FREQ = {"title": "Frequency Scale", "type": "float", "default": 1.0, "min": 0.0, "step": 0.01};
+const CON_FREQ = {"title": "freq. scale", "type": "float", "default": 1.0, "min": 0.0, "max": 200, "step": 0.1};
+const CON_POINTS = {'title': "Points", 'type': "int", 'default': 257, 'min': 11, 'max': 2049};
 const DOMAIN_SPHERICAL = 0;
 const DOMAIN_UV = 1;
 const DOMAIN_LUDWIG3 = 2;
@@ -21,10 +22,10 @@ function as_f32(a){
 }
 
 export class FarfieldABC{
-	static args = ['farfield-ax1-points', 'farfield-ax2-points', 'farfield-frequency'];
+	// One Points control is applied to both mesh axes.
+	static args = ['farfield-points', 'farfield-points', 'farfield-frequency'];
 	static controls = {
-		'farfield-ax1-points': {'title': "Theta Points", 'type': "int", 'default': 257, 'min': 1},
-		'farfield-ax2-points': {'title': "Phi Points", 'type': "int", 'default': 257, 'min': 1},
+		'farfield-points': CON_POINTS,
 		'farfield-frequency': CON_FREQ,
 	};
 	constructor(ax1Points, ax2Points, frequencyScale){
@@ -368,11 +369,9 @@ export class FarfieldUV extends FarfieldABC{
 	static domain = 'uv';
 	static args = [...FarfieldABC.args, 'farfield-uv-bound'];
 	static controls = {
+		...FarfieldABC.controls,
 		'farfield-domain': {'title': null},
-		'farfield-ax1-points': {'title': "U Points", 'type': "int", 'default': 257, 'min': 1},
-		'farfield-ax2-points': {'title': "V Points", 'type': "int", 'default': 257, 'min': 1},
 		'farfield-uv-bound': {'title': "U/V Bound", 'type': "float", 'default': 1, 'min': 0.1, 'step': 0.1},
-		'farfield-frequency': CON_FREQ,
 	};
 	constructor(uPoints, vPoints, frequencyScale, uMax, vMax){
 		super(uPoints, vPoints, frequencyScale);
@@ -427,10 +426,8 @@ export class FarfieldLudwig3 extends FarfieldABC{
 	static domain = 'ludwig3';
 	static title = 'Ludwig3';
 	static controls = {
+		...FarfieldABC.controls,
 		'farfield-domain': {'title': null},
-		'farfield-ax1-points': {'title': "Az Points", 'type': "int", 'default': 257, 'min': 1},
-		'farfield-ax2-points': {'title': "El Points", 'type': "int", 'default': 257, 'min': 1},
-		'farfield-frequency': CON_FREQ,
 	};
 	constructor(azPoints, elPoints, frequencyScale, azMax, elMax){
 		super(azPoints, elPoints, frequencyScale);

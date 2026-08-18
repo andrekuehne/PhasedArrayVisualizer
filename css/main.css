@@ -542,6 +542,63 @@ select{
 	max-width: none;
 	width: auto;
 }
+.plot-farfield .canvas-footer{
+	display: flex;
+	flex-wrap: nowrap;
+	align-items: center;
+	overflow-x: auto;
+	scrollbar-width: thin;
+	white-space: nowrap;
+	font-size: 0.65em;
+	padding: 1px 3px;
+}
+.plot-farfield .footer-group{
+	flex-wrap: nowrap;
+	flex: 1 1 auto;
+	min-width: 0;
+	gap: 0 5px;
+	justify-content: flex-start;
+	align-items: center;
+}
+.plot-farfield .footer-group > div{
+	display: inline-flex;
+	flex-direction: row;
+	align-items: center;
+	margin: 0;
+	gap: 2px;
+	flex: 0 0 auto;
+}
+.plot-farfield .footer-group input,
+.plot-farfield .footer-group select{
+	margin-left: 0;
+	padding: 1px 3px;
+}
+.plot-farfield .footer-group input[type="number"]{
+	appearance: textfield;
+	-moz-appearance: textfield;
+	box-sizing: content-box;
+}
+.plot-farfield .footer-group input[type="number"]::-webkit-outer-spin-button,
+.plot-farfield .footer-group input[type="number"]::-webkit-inner-spin-button{
+	-webkit-appearance: none;
+	margin: 0;
+}
+.plot-farfield .footer-group input.ff-digits-2{
+	width: 3.2ch;
+	max-width: 3.2ch;
+	min-width: 3.2ch;
+}
+.plot-farfield .footer-group input.ff-digits-4{
+	width: 4.8ch;
+	max-width: 4.8ch;
+	min-width: 4.8ch;
+}
+.plot-farfield .footer-group select{
+	field-sizing: content;
+	width: auto;
+	max-width: 8em;
+	padding-right: 1.15em;
+}
 canvas{
 	border: 1px solid var(--canvas-border-color);
 	box-shadow: 3px 3px var(--shadow);

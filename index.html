@@ -153,33 +153,27 @@
 							</div>
 							<div>
 								<label for="pa-farfield-2d-scale">Scale</label>
-								<input type="number" max="200" min="5" value="40" id="pa-farfield-2d-scale" name="pa-farfield-2d-scale">
+								<input type="number" class="ff-digits-2" max="200" min="5" value="40" id="pa-farfield-2d-scale" name="pa-farfield-2d-scale">
 							</div>
 							<div>
-								<label for="pa-farfield-frequency">Frequency Scale</label>
-								<input type="number" max="200" min="0" value="1" id="pa-farfield-frequency" name="pa-farfield-frequency" step="0.1">
+								<label for="pa-farfield-frequency">freq. scale</label>
+								<input type="number" class="ff-digits-2" max="200" min="0" value="1" id="pa-farfield-frequency" name="pa-farfield-frequency" step="0.1">
 							</div>
 							<div>
-								<label for="pa-farfield-2d-colormap">Colormap</label>
+								<label for="pa-farfield-2d-colormap">CMap</label>
 								<select id="pa-farfield-2d-colormap" name="pa-farfield-2d-colormap"></select>
+							</div>
+							<div>
+								<label for="pa-farfield-points">Points</label>
+								<input type="number" class="ff-digits-4" min="11" max="2049" value="257" id="pa-farfield-points" name="pa-farfield-points">
+							</div>
+							<div id="pa-farfield-uv-bound-div">
+								<label for="pa-farfield-uv-bound">U/V Bound</label>
+								<input type="number" class="ff-digits-2" min="0.5" max="513" value="1" id="pa-farfield-uv-bound" name="pa-farfield-uv-bound" step="0.1">
 							</div>
 							<div>
 								<label for="pa-farfield-click-steer">Click to steer</label>
 								<input type="checkbox" id="pa-farfield-click-steer" name="pa-farfield-click-steer">
-							</div>
-						</div>
-						<div class="footer-group">
-							<div>
-								<label for="pa-farfield-uv-bound">U/V Bound</label>
-								<input type="number" min="0.5" max="513" value="1" id="pa-farfield-uv-bound" name="pa-farfield-uv-bound" step="0.1">
-							</div>
-							<div>
-								<label for="pa-farfield-ax1-points">Theta Points</label>
-								<input type="number" min="11" max="2049" value="257" id="pa-farfield-ax1-points" name="pa-farfield-ax1-points">
-							</div>
-							<div>
-								<label for="pa-farfield-ax2-points">Phi Points</label>
-								<input type="number" min="11" max="2049" value="257" id="pa-farfield-ax2-points" name="pa-farfield-ax2-points">
 							</div>
 						</div>
 					</div>
@@ -257,7 +251,7 @@
 					<h2>Usage and Notes</h2>
 					<ul>
 						<li>Antenna elements are assumed to be isotropic. However, the directivity calculation assumes half-hemisphere radiation (e.g. no back lobes). Therefore, the computed directivity will be 3 dBi higher than using pure isotropic. Said in different terms, the individual element gain is +3.0 dBi.</li>
-						<li>The mesh can be made finer by increasing theta/phi, u/v, or az/el points. However, increasing the number of points may result in laggy performance.</li>
+						<li>The mesh can be made finer by increasing Points. However, increasing the number of points may result in laggy performance.</li>
 						<li>Clicking (or long pressing) elements in the phase/attenuation plots allows you to manually set phase/attenuation. <b>Be sure to select "enable override."</b> Additionally, the attenuation pop-up allows you to disable elements.</li>
 						<li>Hovering (or touching) the 2-D farfield plot or geometry plots will show the value of the plot under the cursor.</li>
 						<li><strong id="help-power">Power</strong> [new Aug. 2026] is either full-scale per-element drive or total array power. Taper, manual attenuation, and quantization scale each element by |a<sub>i</sub>|<sup>2</sup>. Available power is N times full-scale per-element drive. Stimulated (used) power is P<sub>ant</sub> Σ|a<sub>i</sub>|<sup>2</sup>. Power utilization is stimulated/available, shown as % and dB. If total array power is selected, per-element power is P<sub>tot</sub> / Σ|a<sub>i</sub>|<sup>2</sup>. EIRP is directivity times stimulated power. Power metrics and EIRP use the EIRP unit.</li>
