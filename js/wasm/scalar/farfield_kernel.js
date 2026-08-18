@@ -265,6 +265,55 @@ export class PatternMetrics {
         return ret >>> 0;
     }
     /**
+     * @returns {number}
+     */
+    get peak_phi_deg() {
+        const ret = wasm.__wbg_get_patternmetrics_peak_phi_deg(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get peak_theta_deg() {
+        const ret = wasm.__wbg_get_patternmetrics_peak_theta_deg(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get requested_phi_deg() {
+        const ret = wasm.__wbg_get_patternmetrics_requested_phi_deg(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get requested_theta_deg() {
+        const ret = wasm.__wbg_get_patternmetrics_requested_theta_deg(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get squint_ax1_deg() {
+        const ret = wasm.__wbg_get_patternmetrics_squint_ax1_deg(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get squint_ax2_deg() {
+        const ret = wasm.__wbg_get_patternmetrics_squint_ax2_deg(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get squint_deg() {
+        const ret = wasm.__wbg_get_patternmetrics_squint_deg(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * @param {boolean} arg0
      */
     set hpbw_ax1_clipped(arg0) {
@@ -408,6 +457,48 @@ export class PatternMetrics {
     set peak_i2(arg0) {
         wasm.__wbg_set_patternmetrics_peak_i2(this.__wbg_ptr, arg0);
     }
+    /**
+     * @param {number} arg0
+     */
+    set peak_phi_deg(arg0) {
+        wasm.__wbg_set_patternmetrics_peak_phi_deg(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set peak_theta_deg(arg0) {
+        wasm.__wbg_set_patternmetrics_peak_theta_deg(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set requested_phi_deg(arg0) {
+        wasm.__wbg_set_patternmetrics_requested_phi_deg(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set requested_theta_deg(arg0) {
+        wasm.__wbg_set_patternmetrics_requested_theta_deg(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set squint_ax1_deg(arg0) {
+        wasm.__wbg_set_patternmetrics_squint_ax1_deg(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set squint_ax2_deg(arg0) {
+        wasm.__wbg_set_patternmetrics_squint_ax2_deg(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} arg0
+     */
+    set squint_deg(arg0) {
+        wasm.__wbg_set_patternmetrics_squint_deg(this.__wbg_ptr, arg0);
+    }
 }
 if (Symbol.dispose) PatternMetrics.prototype[Symbol.dispose] = PatternMetrics.prototype.free;
 
@@ -450,16 +541,18 @@ export function element_exponent_from_peak_dbi(gain_dbi) {
  * @param {Float32Array} ax1
  * @param {Float32Array} ax2
  * @param {Float32Array} total
+ * @param {number} req_theta_rad
+ * @param {number} req_phi_rad
  * @returns {PatternMetrics}
  */
-export function extract_pattern_metrics(domain, ax1, ax2, total) {
+export function extract_pattern_metrics(domain, ax1, ax2, total, req_theta_rad, req_phi_rad) {
     const ptr0 = passArrayF32ToWasm0(ax1, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArrayF32ToWasm0(ax2, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
     const ptr2 = passArrayF32ToWasm0(total, wasm.__wbindgen_malloc);
     const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.extract_pattern_metrics(domain, ptr0, len0, ptr1, len1, ptr2, len2);
+    const ret = wasm.extract_pattern_metrics(domain, ptr0, len0, ptr1, len1, ptr2, len2, req_theta_rad, req_phi_rad);
     return PatternMetrics.__wrap(ret);
 }
 function __wbg_get_imports() {

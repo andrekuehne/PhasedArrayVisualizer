@@ -26,6 +26,9 @@ const METRIC_KEYS = [
 	'nearest_sll_db', 'largest_sll_db',
 	'nearest_sll_ax1', 'nearest_sll_ax2',
 	'largest_sll_ax1', 'largest_sll_ax2',
+	'peak_theta_deg', 'peak_phi_deg',
+	'requested_theta_deg', 'requested_phi_deg',
+	'squint_deg', 'squint_ax1_deg', 'squint_ax2_deg',
 ];
 
 async function loadGlue(kind){
@@ -83,8 +86,8 @@ function assertMetricsEqual(label, a, b){
 	}
 }
 
-function runExtract(extract, domain, ax1, ax2, total){
-	return copyMetrics(extract(domain, ax1, ax2, total));
+function runExtract(extract, domain, ax1, ax2, total, reqThetaRad = 0, reqPhiRad = 0){
+	return copyMetrics(extract(domain, ax1, ax2, total, reqThetaRad, reqPhiRad));
 }
 
 function rectArray(nx, ny, dx, dy){
@@ -144,6 +147,12 @@ describe('WASM pattern metrics', () => {
 		const wantDeg = want * 180 / Math.PI;
 		assert.ok(Math.abs(a.hpbw_large_deg - wantDeg) / wantDeg < 0.08);
 		assert.ok(Math.abs(a.hpbw_small_deg - wantDeg) / wantDeg < 0.08);
+		assert.ok(Math.abs(a.peak_theta_deg) < 0.2, `peak_theta ${a.peak_theta_deg}`);
+		assert.ok(Math.abs(a.squint_deg) < 0.2, `squint ${a.squint_deg}`);
+		assert.ok(Math.abs(a.squint_ax1_deg) < 0.2, `squint_ax1 ${a.squint_ax1_deg}`);
+		assert.ok(Math.abs(a.squint_ax2_deg) < 0.2, `squint_ax2 ${a.squint_ax2_deg}`);
+		assert.equal(a.requested_theta_deg, 0);
+		assert.equal(a.requested_phi_deg, 0);
 	});
 
 	test('SIMD and scalar agree on two-Gaussian SLL', () => {

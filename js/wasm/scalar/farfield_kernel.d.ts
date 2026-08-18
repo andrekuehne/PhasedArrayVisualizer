@@ -43,6 +43,13 @@ export class PatternMetrics {
     peak_ax2: number;
     peak_i1: number;
     peak_i2: number;
+    peak_phi_deg: number;
+    peak_theta_deg: number;
+    requested_phi_deg: number;
+    requested_theta_deg: number;
+    squint_ax1_deg: number;
+    squint_ax2_deg: number;
+    squint_deg: number;
 }
 
 /**
@@ -58,7 +65,7 @@ export function apply_element_pattern(domain: number, ax1: Float32Array, ax2: Fl
  */
 export function element_exponent_from_peak_dbi(gain_dbi: number): number;
 
-export function extract_pattern_metrics(domain: number, ax1: Float32Array, ax2: Float32Array, total: Float32Array): PatternMetrics;
+export function extract_pattern_metrics(domain: number, ax1: Float32Array, ax2: Float32Array, total: Float32Array, req_theta_rad: number, req_phi_rad: number): PatternMetrics;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -89,6 +96,13 @@ export interface InitOutput {
     readonly __wbg_get_patternmetrics_peak_ax2: (a: number) => number;
     readonly __wbg_get_patternmetrics_peak_i1: (a: number) => number;
     readonly __wbg_get_patternmetrics_peak_i2: (a: number) => number;
+    readonly __wbg_get_patternmetrics_peak_phi_deg: (a: number) => number;
+    readonly __wbg_get_patternmetrics_peak_theta_deg: (a: number) => number;
+    readonly __wbg_get_patternmetrics_requested_phi_deg: (a: number) => number;
+    readonly __wbg_get_patternmetrics_requested_theta_deg: (a: number) => number;
+    readonly __wbg_get_patternmetrics_squint_ax1_deg: (a: number) => number;
+    readonly __wbg_get_patternmetrics_squint_ax2_deg: (a: number) => number;
+    readonly __wbg_get_patternmetrics_squint_deg: (a: number) => number;
     readonly __wbg_patternmetrics_free: (a: number, b: number) => void;
     readonly __wbg_set_patternmetrics_hpbw_ax1: (a: number, b: number) => void;
     readonly __wbg_set_patternmetrics_hpbw_ax1_clipped: (a: number, b: number) => void;
@@ -114,9 +128,16 @@ export interface InitOutput {
     readonly __wbg_set_patternmetrics_peak_ax2: (a: number, b: number) => void;
     readonly __wbg_set_patternmetrics_peak_i1: (a: number, b: number) => void;
     readonly __wbg_set_patternmetrics_peak_i2: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_peak_phi_deg: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_peak_theta_deg: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_requested_phi_deg: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_requested_theta_deg: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_squint_ax1_deg: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_squint_ax2_deg: (a: number, b: number) => void;
+    readonly __wbg_set_patternmetrics_squint_deg: (a: number, b: number) => void;
     readonly apply_element_pattern: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any, i: number, j: number) => number;
     readonly element_exponent_from_peak_dbi: (a: number) => number;
-    readonly extract_pattern_metrics: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly extract_pattern_metrics: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly farfieldkernel_accumulate_tile: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly farfieldkernel_finalize: (a: number, b: number) => number;
     readonly farfieldkernel_new: () => number;

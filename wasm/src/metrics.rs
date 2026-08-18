@@ -86,6 +86,13 @@ pub struct PatternMetrics {
 	pub nearest_sll_ax2: f32,
 	pub largest_sll_ax1: f32,
 	pub largest_sll_ax2: f32,
+	pub peak_theta_deg: f32,
+	pub peak_phi_deg: f32,
+	pub requested_theta_deg: f32,
+	pub requested_phi_deg: f32,
+	pub squint_deg: f32,
+	pub squint_ax1_deg: f32,
+	pub squint_ax2_deg: f32,
 }
 
 fn nan_metrics() -> PatternMetrics {
@@ -114,6 +121,13 @@ fn nan_metrics() -> PatternMetrics {
 		nearest_sll_ax2: f32::NAN,
 		largest_sll_ax1: f32::NAN,
 		largest_sll_ax2: f32::NAN,
+		peak_theta_deg: f32::NAN,
+		peak_phi_deg: f32::NAN,
+		requested_theta_deg: f32::NAN,
+		requested_phi_deg: f32::NAN,
+		squint_deg: f32::NAN,
+		squint_ax1_deg: f32::NAN,
+		squint_ax2_deg: f32::NAN,
 	}
 }
 
@@ -983,6 +997,302 @@ fn hpbw_large_small(
 	}
 }
 
+fn look_from_uv(u: f32, v: f32) -> Option<Vec3> {
+	let r2 = u * u + v * v;
+	if r2 >= 1.0 {
+		None
+	} else {
+		Some(Vec3 {
+			x: u,
+			y: v,
+			z: (1.0 - r2).sqrt(),
+		})
+	}
+}
+
+fn match_theta_phi_to_requested(
+	theta: f32,
+	phi: f32,
+	req_theta: f32,
+	req_phi: f32,
+) -> (f32, f32) {
+	const PI: f32 = std::f32::consts::PI;
+	let cands = [
+		adjust_theta_phi(theta, phi),
+		adjust_theta_phi(-theta, phi + PI),
+		adjust_theta_phi(-theta, phi - PI),
+	];
+	let mut best = cands[0];
+	let mut best_d = f32::INFINITY;
+	for (th, ph) in cands {
+		let d = (th - req_theta).hypot(ph - req_phi);
+		if d < best_d {
+			best_d = d;
+			best = (th, ph);
+		}
+	}
+	best
+}
+
+fn solve6(mut a: [[f32; 6]; 6], mut b: [f32; 6]) -> Option<[f32; 6]> {
+	for k in 0..6 {
+		let mut piv = k;
+		let mut best = a[k][k].abs();
+		for i in (k + 1)..6 {
+			let v = a[i][k].abs();
+			if v > best {
+				best = v;
+				piv = i;
+			}
+		}
+		if best < 1e-12 {
+			return None;
+		}
+		if piv != k {
+			a.swap(k, piv);
+			b.swap(k, piv);
+		}
+		let diag = a[k][k];
+		for i in (k + 1)..6 {
+			let f = a[i][k] / diag;
+			for j in k..6 {
+				a[i][j] -= f * a[k][j];
+			}
+			b[i] -= f * b[k];
+		}
+	}
+	let mut x = [0.0f32; 6];
+	for i in (0..6).rev() {
+		let mut s = b[i];
+		for j in (i + 1)..6 {
+			s -= a[i][j] * x[j];
+		}
+		if a[i][i].abs() < 1e-12 {
+			return None;
+		}
+		x[i] = s / a[i][i];
+	}
+	Some(x)
+}
+
+fn neighbor_index(
+	domain: u32,
+	ax1: &[f32],
+	n1: usize,
+	n2: usize,
+	i1: usize,
+	i2: usize,
+	d1: isize,
+	d2: isize,
+) -> Option<(usize, usize)> {
+	if d1 == 0 && d2 == 0 {
+		return Some((i1, i2));
+	}
+	let j1 = i1 as isize + d1;
+	if j1 < 0 || j1 >= n1 as isize {
+		return None;
+	}
+	let j1 = j1 as usize;
+	if d2 == 0 {
+		return Some((j1, i2));
+	}
+	if domain == DOMAIN_SPHERICAL {
+		return step_spherical_phi(ax1, n2, j1, i2, d2);
+	}
+	let j2 = i2 as isize + d2;
+	if j2 < 0 || j2 >= n2 as isize {
+		return None;
+	}
+	Some((j1, j2 as usize))
+}
+
+fn refine_peak_look(
+	domain: u32,
+	ax1: &[f32],
+	ax2: &[f32],
+	total: &[f32],
+	i1_peak: usize,
+	i2_peak: usize,
+) -> Option<Vec3> {
+	let n1 = ax1.len();
+	let n2 = ax2.len();
+	let r_grid = look(domain, ax1[i1_peak], ax2[i2_peak])?;
+	let u0 = r_grid.x;
+	let v0 = r_grid.y;
+
+	let mut pts: Vec<(f32, f32, f32)> = Vec::new();
+	let mut seen = vec![false; n1 * n2];
+	let mut u_min = f32::INFINITY;
+	let mut u_max = f32::NEG_INFINITY;
+	let mut v_min = f32::INFINITY;
+	let mut v_max = f32::NEG_INFINITY;
+
+	for d2 in -1isize..=1 {
+		for d1 in -1isize..=1 {
+			let Some((j1, j2)) = neighbor_index(domain, ax1, n1, n2, i1_peak, i2_peak, d1, d2)
+			else {
+				continue;
+			};
+			if !sample_valid(domain, ax1, ax2, j1, j2) {
+				continue;
+			}
+			let k = idx(j1, j2, n1);
+			if seen[k] {
+				continue;
+			}
+			seen[k] = true;
+			let Some(r) = look(domain, ax1[j1], ax2[j2]) else {
+				continue;
+			};
+			let u = r.x;
+			let v = r.y;
+			if pts
+				.iter()
+				.any(|(pu, pv, _)| (*pu - u).hypot(*pv - v) < 1e-8)
+			{
+				continue;
+			}
+			pts.push((u, v, total[k]));
+			u_min = u_min.min(u);
+			u_max = u_max.max(u);
+			v_min = v_min.min(v);
+			v_max = v_max.max(v);
+		}
+	}
+
+	if pts.len() < 6 {
+		return Some(r_grid);
+	}
+
+	let mut ata = [[0.0f32; 6]; 6];
+	let mut atb = [0.0f32; 6];
+	for &(u, v, intensity) in &pts {
+		let du = u - u0;
+		let dv = v - v0;
+		let row = [1.0, du, dv, du * du, dv * dv, du * dv];
+		for p in 0..6 {
+			atb[p] += row[p] * intensity;
+			for q in 0..6 {
+				ata[p][q] += row[p] * row[q];
+			}
+		}
+	}
+
+	let Some(coef) = solve6(ata, atb) else {
+		return Some(r_grid);
+	};
+	let b = coef[1];
+	let c = coef[2];
+	let d = coef[3];
+	let e = coef[4];
+	let f = coef[5];
+	let det = 4.0 * d * e - f * f;
+	if !(d < 0.0 && det > 0.0) {
+		return Some(r_grid);
+	}
+	let du = (-2.0 * b * e + f * c) / det;
+	let dv = (-2.0 * c * d + f * b) / det;
+	let u = u0 + du;
+	let v = v0 + dv;
+	if u < u_min || u > u_max || v < v_min || v > v_max {
+		return Some(r_grid);
+	}
+	look_from_uv(u, v).or(Some(r_grid))
+}
+
+fn axis_hold_squint(domain: u32, r_req: Vec3, a1_req: f32, a2_req: f32, a1_pk: f32, a2_pk: f32) -> (f32, f32) {
+	let s1 = look(domain, a1_pk, a2_req)
+		.map(|r| angle_deg(r_req, r))
+		.unwrap_or(f32::NAN);
+	let s2 = look(domain, a1_req, a2_pk)
+		.map(|r| angle_deg(r_req, r))
+		.unwrap_or(f32::NAN);
+	(s1, s2)
+}
+
+struct BeamPointing {
+	peak_theta_deg: f32,
+	peak_phi_deg: f32,
+	requested_theta_deg: f32,
+	requested_phi_deg: f32,
+	squint_deg: f32,
+	squint_ax1_deg: f32,
+	squint_ax2_deg: f32,
+}
+
+fn compute_beam_pointing(
+	domain: u32,
+	ax1: &[f32],
+	ax2: &[f32],
+	total: &[f32],
+	i1_peak: usize,
+	i2_peak: usize,
+	req_theta_rad: f32,
+	req_phi_rad: f32,
+) -> BeamPointing {
+	let (req_th, req_ph) = adjust_theta_phi(req_theta_rad, req_phi_rad);
+	let req_th_deg = req_th.to_degrees();
+	let req_ph_deg = req_ph.to_degrees();
+	let nan_pt = BeamPointing {
+		peak_theta_deg: f32::NAN,
+		peak_phi_deg: f32::NAN,
+		requested_theta_deg: req_th_deg,
+		requested_phi_deg: req_ph_deg,
+		squint_deg: f32::NAN,
+		squint_ax1_deg: f32::NAN,
+		squint_ax2_deg: f32::NAN,
+	};
+
+	let Some(r_peak) = refine_peak_look(domain, ax1, ax2, total, i1_peak, i2_peak) else {
+		return nan_pt;
+	};
+	let Some(r_req) = look(DOMAIN_SPHERICAL, req_theta_rad, req_phi_rad) else {
+		return nan_pt;
+	};
+	let squint = if req_theta_rad.is_finite() && req_phi_rad.is_finite() {
+		angle_deg(r_req, r_peak)
+	} else {
+		f32::NAN
+	};
+	let Some((th0, ph0)) = from_look(DOMAIN_SPHERICAL, r_peak) else {
+		return BeamPointing {
+			peak_theta_deg: f32::NAN,
+			peak_phi_deg: f32::NAN,
+			requested_theta_deg: req_th_deg,
+			requested_phi_deg: req_ph_deg,
+			squint_deg: squint,
+			squint_ax1_deg: f32::NAN,
+			squint_ax2_deg: f32::NAN,
+		};
+	};
+	let (th, mut ph) = match_theta_phi_to_requested(th0, ph0, req_th, req_ph);
+	let pole_eps = local_psi_step(domain, ax1, ax2, i1_peak, i2_peak, r_peak);
+	if th.abs() <= pole_eps {
+		ph = req_ph;
+	};
+
+	let (squint_ax1, squint_ax2) = if domain == DOMAIN_SPHERICAL {
+		axis_hold_squint(DOMAIN_SPHERICAL, r_req, req_th, req_ph, th, ph)
+	} else if let (Some((a1_req, a2_req)), Some((a1_pk, a2_pk))) = (
+		from_look(domain, r_req),
+		from_look(domain, r_peak),
+	) {
+		axis_hold_squint(domain, r_req, a1_req, a2_req, a1_pk, a2_pk)
+	} else {
+		(f32::NAN, f32::NAN)
+	};
+
+	BeamPointing {
+		peak_theta_deg: th.to_degrees(),
+		peak_phi_deg: ph.to_degrees(),
+		requested_theta_deg: req_th_deg,
+		requested_phi_deg: req_ph_deg,
+		squint_deg: squint,
+		squint_ax1_deg: squint_ax1,
+		squint_ax2_deg: squint_ax2,
+	}
+}
+
 /// Extract HPBW and sidelobe metrics from a computed far-field intensity map.
 ///
 /// `total` is row-major with `index = i2 * n1 + i1` (ax2 outer), matching
@@ -992,6 +1302,8 @@ pub fn compute_pattern_metrics(
 	ax1: &[f32],
 	ax2: &[f32],
 	total: &[f32],
+	req_theta_rad: f32,
+	req_phi_rad: f32,
 ) -> PatternMetrics {
 	let n1 = ax1.len();
 	let n2 = ax2.len();
@@ -1150,6 +1462,17 @@ pub fn compute_pattern_metrics(
 			)
 		};
 
+	let pointing = compute_beam_pointing(
+		domain,
+		ax1,
+		ax2,
+		total,
+		i1_peak,
+		i2_peak,
+		req_theta_rad,
+		req_phi_rad,
+	);
+
 	PatternMetrics {
 		peak_i1: i1_peak as u32,
 		peak_i2: i2_peak as u32,
@@ -1175,6 +1498,13 @@ pub fn compute_pattern_metrics(
 		nearest_sll_ax2,
 		largest_sll_ax1,
 		largest_sll_ax2,
+		peak_theta_deg: pointing.peak_theta_deg,
+		peak_phi_deg: pointing.peak_phi_deg,
+		requested_theta_deg: pointing.requested_theta_deg,
+		requested_phi_deg: pointing.requested_phi_deg,
+		squint_deg: pointing.squint_deg,
+		squint_ax1_deg: pointing.squint_ax1_deg,
+		squint_ax2_deg: pointing.squint_ax2_deg,
 	}
 }
 
@@ -1184,13 +1514,19 @@ pub fn extract_pattern_metrics(
 	ax1: &[f32],
 	ax2: &[f32],
 	total: &[f32],
+	req_theta_rad: f32,
+	req_phi_rad: f32,
 ) -> PatternMetrics {
-	compute_pattern_metrics(domain, ax1, ax2, total)
+	compute_pattern_metrics(domain, ax1, ax2, total, req_theta_rad, req_phi_rad)
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	fn metrics(domain: u32, ax1: &[f32], ax2: &[f32], total: &[f32]) -> PatternMetrics {
+		compute_pattern_metrics(domain, ax1, ax2, total, 0.0, 0.0)
+	}
 
 	fn linspace(a: f32, b: f32, n: usize) -> Vec<f32> {
 		if n == 1 {
@@ -1234,7 +1570,7 @@ mod tests {
 		let mut total = vec![0.0f32; n * n];
 		let sigma = 0.05;
 		add_gaussian(&mut total, &ax1, &ax2, 0.0, 0.0, 1.0, sigma);
-		let m = compute_pattern_metrics(DOMAIN_LUDWIG3, &ax1, &ax2, &total);
+		let m = metrics(DOMAIN_LUDWIG3, &ax1, &ax2, &total);
 		let want = expected_hpbw(sigma);
 		assert!(!m.hpbw_ax1_clipped && !m.hpbw_ax2_clipped);
 		assert!(
@@ -1266,7 +1602,7 @@ mod tests {
 		let mut total = vec![0.0f32; n * n];
 		let sigma = 0.05;
 		add_gaussian(&mut total, &ax1, &ax2, 0.0, 0.0, 1.0, sigma);
-		let m = compute_pattern_metrics(DOMAIN_UV, &ax1, &ax2, &total);
+		let m = metrics(DOMAIN_UV, &ax1, &ax2, &total);
 		let want = expected_hpbw(sigma);
 		assert!(!m.hpbw_ax1_clipped && !m.hpbw_ax2_clipped);
 		assert!((m.hpbw_ax1 - want).abs() / want < 0.05);
@@ -1288,7 +1624,7 @@ mod tests {
 		add_gaussian(&mut total, &ax1, &ax2, 0.0, 0.0, 1.0, 0.04);
 		add_gaussian(&mut total, &ax1, &ax2, 0.18, 0.0, 0.1, 0.03);
 		add_gaussian(&mut total, &ax1, &ax2, 0.35, 0.25, 0.25, 0.03);
-		let m = compute_pattern_metrics(DOMAIN_LUDWIG3, &ax1, &ax2, &total);
+		let m = metrics(DOMAIN_LUDWIG3, &ax1, &ax2, &total);
 		let nearest_db = 10.0 * 0.1f32.log10();
 		let largest_db = 10.0 * 0.25f32.log10();
 		assert!(
@@ -1323,7 +1659,7 @@ mod tests {
 				total[i2 * n + i1] = (-(th * th) / (2.0 * sigma * sigma)).exp();
 			}
 		}
-		let m = compute_pattern_metrics(DOMAIN_SPHERICAL, &ax1, &ax2, &total);
+		let m = metrics(DOMAIN_SPHERICAL, &ax1, &ax2, &total);
 		assert!(m.peak_ax1.abs() < ax1[1] - ax1[0]);
 		assert!(!m.hpbw_ax1_clipped);
 		assert!(!m.hpbw_ax2_clipped, "phi cut at pole must not be used");
@@ -1377,7 +1713,7 @@ mod tests {
 		let th0 = 0.3;
 		let mut total_edge = vec![0.0f32; n * n];
 		fill_spherical_cap(&mut total_edge, &ax1, &ax2, th0, std::f32::consts::FRAC_PI_2, sigma);
-		let edge = compute_pattern_metrics(DOMAIN_SPHERICAL, &ax1, &ax2, &total_edge);
+		let edge = metrics(DOMAIN_SPHERICAL, &ax1, &ax2, &total_edge);
 		assert!(
 			!edge.hpbw_ax2_clipped,
 			"phi HPBW clipped at wrap: peak φ={}",
@@ -1387,7 +1723,7 @@ mod tests {
 
 		let mut total_mid = vec![0.0f32; n * n];
 		fill_spherical_cap(&mut total_mid, &ax1, &ax2, th0, 0.0, sigma);
-		let mid = compute_pattern_metrics(DOMAIN_SPHERICAL, &ax1, &ax2, &total_mid);
+		let mid = metrics(DOMAIN_SPHERICAL, &ax1, &ax2, &total_mid);
 		assert!(!mid.hpbw_ax2_clipped);
 		assert!(
 			(edge.hpbw_ax2_deg - mid.hpbw_ax2_deg).abs() / mid.hpbw_ax2_deg < 0.15,
@@ -1422,7 +1758,7 @@ mod tests {
 		}
 		let mid = n / 2;
 		total[mid * n + mid] = 1.0;
-		let m = compute_pattern_metrics(DOMAIN_UV, &ax1, &ax2, &total);
+		let m = metrics(DOMAIN_UV, &ax1, &ax2, &total);
 		assert_eq!(m.peak_i1, mid as u32);
 		assert_eq!(m.peak_i2, mid as u32);
 		assert!(m.peak_ax1.abs() < 1e-5);
@@ -1435,7 +1771,7 @@ mod tests {
 		let ax1 = linspace(-0.1, 0.1, n);
 		let ax2 = linspace(-0.1, 0.1, n);
 		let total = vec![1.0f32; n * n];
-		let m = compute_pattern_metrics(DOMAIN_LUDWIG3, &ax1, &ax2, &total);
+		let m = metrics(DOMAIN_LUDWIG3, &ax1, &ax2, &total);
 		assert!(m.hpbw_ax1_clipped && m.hpbw_ax2_clipped);
 		assert!(m.hpbw_ax1.is_nan() && m.hpbw_ax2.is_nan());
 		assert!(m.hpbw_ax1_deg.is_nan() && m.hpbw_ax2_deg.is_nan());
@@ -1447,11 +1783,13 @@ mod tests {
 
 	#[test]
 	fn empty_inputs_return_nan() {
-		let m = compute_pattern_metrics(DOMAIN_UV, &[], &[], &[]);
+		let m = metrics(DOMAIN_UV, &[], &[], &[]);
 		assert!(m.peak_ax1.is_nan());
+		assert!(m.peak_theta_deg.is_nan());
+		assert!(m.squint_deg.is_nan());
 		let ax1 = [0.0f32];
 		let ax2 = [0.0f32];
-		let m = compute_pattern_metrics(DOMAIN_UV, &ax1, &ax2, &[1.0, 2.0]);
+		let m = metrics(DOMAIN_UV, &ax1, &ax2, &[1.0, 2.0]);
 		assert!(m.peak_ax1.is_nan());
 	}
 
@@ -1499,7 +1837,7 @@ mod tests {
 		let sigma2 = 0.03;
 		let rot = 30.0f32.to_radians();
 		add_rotated_gaussian(&mut total, &ax1, &ax2, sigma1, sigma2, rot);
-		let m = compute_pattern_metrics(DOMAIN_LUDWIG3, &ax1, &ax2, &total);
+		let m = metrics(DOMAIN_LUDWIG3, &ax1, &ax2, &total);
 		assert!(!m.hpbw_large_clipped && !m.hpbw_small_clipped);
 		assert!(!m.hpbw_ax1_clipped && !m.hpbw_ax2_clipped);
 		let want_large = expected_hpbw(sigma1).to_degrees();
@@ -1535,6 +1873,173 @@ mod tests {
 			abs_angle_diff_180(m.hpbw_small_angle_deg, 120.0) < 8.0,
 			"small angle {}",
 			m.hpbw_small_angle_deg
+		);
+	}
+
+	#[test]
+	fn interpolated_peak_beats_grid_ludwig3() {
+		let n = 81;
+		let ax1 = linspace(-0.4, 0.4, n);
+		let ax2 = linspace(-0.4, 0.4, n);
+		let mut total = vec![0.0f32; n * n];
+		let c1 = 0.037;
+		let c2 = -0.021;
+		add_gaussian(&mut total, &ax1, &ax2, c1, c2, 1.0, 0.05);
+		let m = metrics(DOMAIN_LUDWIG3, &ax1, &ax2, &total);
+		let r_true = look(DOMAIN_LUDWIG3, c1, c2).unwrap();
+		let r_grid = look(DOMAIN_LUDWIG3, m.peak_ax1, m.peak_ax2).unwrap();
+		let r_fit = look(
+			DOMAIN_SPHERICAL,
+			m.peak_theta_deg.to_radians(),
+			m.peak_phi_deg.to_radians(),
+		)
+		.unwrap();
+		let grid_err = angle_deg(r_true, r_grid);
+		let fit_err = angle_deg(r_true, r_fit);
+		assert!(
+			fit_err < grid_err * 0.5 || fit_err < 0.05,
+			"fit {} deg vs grid {} deg",
+			fit_err,
+			grid_err
+		);
+		assert!(grid_err > 0.05, "grid peak should be off the true center");
+	}
+
+	#[test]
+	fn requested_at_true_peak_has_zero_squint() {
+		let n = 81;
+		let ax1 = linspace(-0.4, 0.4, n);
+		let ax2 = linspace(-0.4, 0.4, n);
+		let mut total = vec![0.0f32; n * n];
+		let c1 = 0.12;
+		let c2 = -0.08;
+		add_gaussian(&mut total, &ax1, &ax2, c1, c2, 1.0, 0.05);
+		let r_true = look(DOMAIN_LUDWIG3, c1, c2).unwrap();
+		let (th, ph) = from_look(DOMAIN_SPHERICAL, r_true).unwrap();
+		let m = compute_pattern_metrics(DOMAIN_LUDWIG3, &ax1, &ax2, &total, th, ph);
+		assert!(
+			m.squint_deg.abs() < 0.08,
+			"squint {} deg",
+			m.squint_deg
+		);
+		assert!((m.requested_theta_deg - th.to_degrees()).abs() < 1e-3);
+		assert!((m.requested_phi_deg - ph.to_degrees()).abs() < 1e-3);
+	}
+
+	#[test]
+	fn squint_matches_known_offset_from_boresight() {
+		let n = 101;
+		let ax1 = linspace(-0.4, 0.4, n);
+		let ax2 = linspace(-0.4, 0.4, n);
+		let mut total = vec![0.0f32; n * n];
+		add_gaussian(&mut total, &ax1, &ax2, 0.0, 0.0, 1.0, 0.05);
+		let req_th = 10.0f32.to_radians();
+		let m = compute_pattern_metrics(DOMAIN_LUDWIG3, &ax1, &ax2, &total, req_th, 0.0);
+		assert!(
+			(m.squint_deg - 10.0).abs() < 0.2,
+			"squint {} deg vs 10",
+			m.squint_deg
+		);
+		assert!(m.peak_theta_deg.abs() < 0.2);
+		assert!(
+			(m.squint_ax1_deg - 10.0).abs() < 0.2,
+			"theta-axis squint {}",
+			m.squint_ax1_deg
+		);
+		assert!(
+			m.squint_ax2_deg.abs() < 0.2,
+			"phi-axis squint should be ~0, got {}",
+			m.squint_ax2_deg
+		);
+	}
+
+	#[test]
+	fn wrap_identity_squint_zero_and_display_matches_requested() {
+		let n = 101;
+		let ax1 = linspace(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2, n);
+		let ax2 = linspace(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2, n);
+		let mut total = vec![0.0f32; n * n];
+		let th0 = -30.0f32.to_radians();
+		let ph_neg = -std::f32::consts::FRAC_PI_2;
+		fill_spherical_cap(&mut total, &ax1, &ax2, th0, ph_neg, 0.08);
+		let req_th = 30.0f32.to_radians();
+		let req_ph = std::f32::consts::FRAC_PI_2;
+		let m = compute_pattern_metrics(DOMAIN_SPHERICAL, &ax1, &ax2, &total, req_th, req_ph);
+		assert!(
+			m.squint_deg.abs() < 0.5,
+			"wrap squint {} deg",
+			m.squint_deg
+		);
+		assert!(
+			(m.peak_theta_deg - 30.0).abs() < 1.0,
+			"achieved theta {}",
+			m.peak_theta_deg
+		);
+		assert!(
+			(m.peak_phi_deg - 90.0).abs() < 1.0,
+			"achieved phi {}",
+			m.peak_phi_deg
+		);
+		assert!(m.squint_ax1_deg.abs() < 0.5, "wrap ax1 {}", m.squint_ax1_deg);
+		assert!(m.squint_ax2_deg.abs() < 0.5, "wrap ax2 {}", m.squint_ax2_deg);
+	}
+
+	#[test]
+	fn boresight_peak_copies_requested_phi() {
+		let n = 101;
+		let ax1 = linspace(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2, n);
+		let ax2 = linspace(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2, n);
+		let mut total = vec![0.0f32; n * n];
+		fill_spherical_cap(&mut total, &ax1, &ax2, 0.0, 0.0, 0.08);
+		let req_ph = 45.0f32.to_radians();
+		let m = compute_pattern_metrics(DOMAIN_SPHERICAL, &ax1, &ax2, &total, 0.0, req_ph);
+		assert!(
+			m.squint_deg.abs() < 0.5,
+			"pole squint {} deg",
+			m.squint_deg
+		);
+		assert!(m.peak_theta_deg.abs() < 0.5, "theta {}", m.peak_theta_deg);
+		assert!(
+			(m.peak_phi_deg - 45.0).abs() < 1e-3,
+			"phi {} should stay at requested 45",
+			m.peak_phi_deg
+		);
+		assert!(
+			m.squint_ax2_deg.abs() < 0.2,
+			"pole phi-axis squint {}",
+			m.squint_ax2_deg
+		);
+	}
+
+	#[test]
+	fn pure_phi_offset_has_zero_theta_axis_squint() {
+		let n = 121;
+		let ax1 = linspace(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2, n);
+		let ax2 = linspace(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2, n);
+		let mut total = vec![0.0f32; n * n];
+		let th0 = 30.0f32.to_radians();
+		fill_spherical_cap(&mut total, &ax1, &ax2, th0, 0.0, 0.08);
+		let req_ph = 10.0f32.to_radians();
+		let m = compute_pattern_metrics(DOMAIN_SPHERICAL, &ax1, &ax2, &total, th0, req_ph);
+		let r_req = look(DOMAIN_SPHERICAL, th0, req_ph).unwrap();
+		let r_phi = look(DOMAIN_SPHERICAL, th0, 0.0).unwrap();
+		let want_phi = angle_deg(r_req, r_phi);
+		assert!(
+			m.squint_ax1_deg.abs() < 0.3,
+			"theta-axis squint should be ~0, got {}",
+			m.squint_ax1_deg
+		);
+		assert!(
+			(m.squint_ax2_deg - want_phi).abs() < 0.3,
+			"phi-axis squint {} vs {}",
+			m.squint_ax2_deg,
+			want_phi
+		);
+		assert!(
+			(m.squint_deg - want_phi).abs() < 0.3,
+			"total squint {} vs phi-only {}",
+			m.squint_deg,
+			want_phi
 		);
 	}
 }

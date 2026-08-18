@@ -185,22 +185,33 @@ export class FarfieldABC{
 			nearest_sll_ax2: m.nearest_sll_ax2,
 			largest_sll_ax1: m.largest_sll_ax1,
 			largest_sll_ax2: m.largest_sll_ax2,
+			peak_theta_deg: m.peak_theta_deg,
+			peak_phi_deg: m.peak_phi_deg,
+			requested_theta_deg: m.requested_theta_deg,
+			requested_phi_deg: m.requested_phi_deg,
+			squint_deg: m.squint_deg,
+			squint_ax1_deg: m.squint_ax1_deg,
+			squint_ax2_deg: m.squint_ax2_deg,
 		};
 		if (typeof m.free === 'function') m.free();
 		return o;
 	}
 	/**
-	 * Extract HPBW / SLL from the current intensity grid.
+	 * Extract HPBW / SLL / pointing from the current intensity grid.
 	 * @param {number} domain
 	 * @param {ArrayLike<number>} ax1
 	 * @param {ArrayLike<number>} ax2
+	 * @param {{theta?: number, phi?: number}} [pa]
 	 */
-	compute_pattern_metrics(domain, ax1, ax2){
+	compute_pattern_metrics(domain, ax1, ax2, pa){
 		this.patternMetrics = null;
 		if (this._totalFlat == null) return;
+		const deg2rad = Math.PI / 180;
+		const reqTheta = (pa && Number.isFinite(pa.theta)) ? pa.theta * deg2rad : 0;
+		const reqPhi = (pa && Number.isFinite(pa.phi)) ? pa.phi * deg2rad : 0;
 		try {
 			this.patternMetrics = FarfieldABC.copy_pattern_metrics(
-				extractPatternMetrics(domain, as_f32(ax1), as_f32(ax2), this._totalFlat)
+				extractPatternMetrics(domain, as_f32(ax1), as_f32(ax2), this._totalFlat, reqTheta, reqPhi)
 			);
 		}
 		catch (err){
@@ -363,7 +374,7 @@ export class FarfieldSpherical extends FarfieldABC{
 		yield pars.yield('Calculating spherical directivity...');
 		this.dirMax = this.compute_directivity();
 		yield pars.yield('Calculating spherical pattern metrics...');
-		this.compute_pattern_metrics(DOMAIN_SPHERICAL, this.theta, this.phi);
+		this.compute_pattern_metrics(DOMAIN_SPHERICAL, this.theta, this.phi, pa);
 		yield pars.yield('Calculating spherical log...');
 		this.calculate_log();
 	}
@@ -416,7 +427,7 @@ export class FarfieldUV extends FarfieldABC{
 		yield pars.yield('Calculating UV directivity...');
 		this.dirMax = this.compute_directivity();
 		yield pars.yield('Calculating UV pattern metrics...');
-		this.compute_pattern_metrics(DOMAIN_UV, this.u, this.v);
+		this.compute_pattern_metrics(DOMAIN_UV, this.u, this.v, pa);
 		yield pars.yield('Calculating UV log...');
 		this.calculate_log();
 	}
@@ -473,7 +484,7 @@ export class FarfieldLudwig3 extends FarfieldABC{
 		yield pars.yield('Calculating Ludwig3 directivity...');
 		this.dirMax = this.compute_directivity();
 		yield pars.yield('Calculating Ludwig3 pattern metrics...');
-		this.compute_pattern_metrics(DOMAIN_LUDWIG3, this.az, this.el);
+		this.compute_pattern_metrics(DOMAIN_LUDWIG3, this.az, this.el, pa);
 		yield pars.yield('Calculating Ludwig3 log...');
 		this.calculate_log();
 	}

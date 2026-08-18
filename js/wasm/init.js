@@ -37,18 +37,20 @@ export function getFarfieldKernel(){
 }
 
 /**
- * Extract HPBW and sidelobe metrics from a computed intensity map.
+ * Extract HPBW, sidelobe, and beam-pointing metrics from a computed intensity map.
  * @param {number} domain
  * @param {Float32Array} ax1
  * @param {Float32Array} ax2
  * @param {Float32Array} total
+ * @param {number} reqThetaRad requested spherical theta (rad)
+ * @param {number} reqPhiRad requested spherical phi (rad)
  * @returns {import('./simd/farfield_kernel.js').PatternMetrics}
  */
-export function extractPatternMetrics(domain, ax1, ax2, total){
+export function extractPatternMetrics(domain, ax1, ax2, total, reqThetaRad, reqPhiRad){
 	if (extractFn === null){
 		throw new Error('Farfield WASM kernel is not initialized.');
 	}
-	return extractFn(domain, ax1, ax2, total);
+	return extractFn(domain, ax1, ax2, total, reqThetaRad, reqPhiRad);
 }
 
 /**

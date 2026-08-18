@@ -39,6 +39,45 @@ function formatSll(db){
 	return `${db.toFixed(1)} dB`;
 }
 
+/**
+ * @param {number} theta
+ * @param {number} phi
+ */
+function formatAnglePair(theta, phi){
+	if (!Number.isFinite(theta) || !Number.isFinite(phi)) return '—';
+	return `(${theta.toFixed(1)}, ${phi.toFixed(1)}) deg`;
+}
+
+/**
+ * @param {number} pct
+ */
+function formatHpbwPercent(pct){
+	if (pct >= 9.95) return pct.toFixed(0);
+	return pct.toFixed(1);
+}
+
+/**
+ * Squint in degrees, plus each axis offset as a fraction of that axis HPBW.
+ * @param {Record<string, number|boolean>|null} m
+ * @param {[string, string]} axisNames
+ */
+function formatSquint(m, axisNames){
+	if (m == null || !Number.isFinite(m.squint_deg)) return '—';
+	const deg = `${m.squint_deg.toFixed(2)} deg`;
+	const parts = [];
+	for (const [i, axis] of ['ax1', 'ax2'].entries()){
+		const clipped = m[`hpbw_${axis}_clipped`];
+		const hpbw = m[`hpbw_${axis}_deg`];
+		if (clipped || !Number.isFinite(hpbw) || hpbw <= 0) continue;
+		const along = m[`squint_${axis}_deg`];
+		if (!Number.isFinite(along)) continue;
+		const pct = formatHpbwPercent(100 * along / hpbw);
+		parts.push(`${pct}% ${axisNames[i]}`);
+	}
+	if (parts.length === 0) return deg;
+	return `${deg} (${parts.join(', ')})`;
+}
+
 /**	 *
  * Create scene for Phased Array simulator.
  *
@@ -124,7 +163,13 @@ export class PhasedArrayScene extends SceneParent{
 			uv: ['HPBW U', 'HPBW V'],
 			ludwig3: ['HPBW Az', 'HPBW El'],
 		};
+		const axisNames = {
+			spherical: ['Theta', 'Phi'],
+			uv: ['U', 'V'],
+			ludwig3: ['Az', 'El'],
+		};
 		const pair = (ff && labels[ff.domain]) ? labels[ff.domain] : ['HPBW Axis 1', 'HPBW Axis 2'];
+		const names = (ff && axisNames[ff.domain]) ? axisNames[ff.domain] : ['Axis 1', 'Axis 2'];
 		this.find_element('hpbw-ax1-label').textContent = pair[0];
 		this.find_element('hpbw-ax2-label').textContent = pair[1];
 		const isUv = ff != null && ff.domain === 'uv';
@@ -134,6 +179,13 @@ export class PhasedArrayScene extends SceneParent{
 		this.find_element('hpbw-small').textContent = formatHpbw(m, 'small', isUv);
 		this.find_element('nearest-sll').textContent = formatSll(m && m.nearest_sll_db);
 		this.find_element('largest-sll').textContent = formatSll(m && m.largest_sll_db);
+		this.find_element('requested-angle').textContent = formatAnglePair(
+			m && m.requested_theta_deg, m && m.requested_phi_deg
+		);
+		this.find_element('achieved-angle').textContent = formatAnglePair(
+			m && m.peak_theta_deg, m && m.peak_phi_deg
+		);
+		this.find_element('squint-angle').textContent = formatSquint(m, names);
 	}
 	build_queue(){
 		this.queue.request(() => {
