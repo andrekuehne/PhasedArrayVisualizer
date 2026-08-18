@@ -64,6 +64,10 @@
 								<label for="pa-phi">Phi (deg)</label>
 								<input type="number" min="-90" max="90" value="0" id="pa-phi" name="pa-phi" />
 							</div>
+							<div class="form-group">
+								<label for="pa-farfield-click-steer">Click to steer</label>
+								<input type="checkbox" id="pa-farfield-click-steer" name="pa-farfield-click-steer">
+							</div>
 						</div>
 					</div>
 					<div class="control-row">
@@ -101,8 +105,6 @@
 						<div id="pa-element-controls">
 							<h3>Element</h3>
 						</div>
-					</div>
-					<div class="control-row">
 						<div>
 							<h3>Power</h3>
 							<div class="form-group" id="pa-power-div">
@@ -129,6 +131,35 @@
 								</select>
 							</div>
 						</div>
+					</div>
+					<div class="control-row">
+						<div>
+							<h3>2-D Farfield</h3>
+							<div class="form-group">
+								<label for="pa-farfield-domain">Domain</label>
+								<select id="pa-farfield-domain"></select>
+							</div>
+							<div class="form-group">
+								<label for="pa-farfield-2d-scale">Scale</label>
+								<input type="number" class="ff-digits-2" max="200" min="5" value="40" id="pa-farfield-2d-scale" name="pa-farfield-2d-scale">
+							</div>
+							<div class="form-group">
+								<label for="pa-farfield-frequency">freq. scale</label>
+								<input type="number" class="ff-spin" max="200" min="0" value="1" id="pa-farfield-frequency" name="pa-farfield-frequency" step="0.02">
+							</div>
+							<div class="form-group">
+								<label for="pa-farfield-2d-colormap">CMap</label>
+								<select id="pa-farfield-2d-colormap" name="pa-farfield-2d-colormap"></select>
+							</div>
+							<div class="form-group">
+								<label for="pa-farfield-points">Points</label>
+								<input type="number" class="ff-digits-4" min="11" max="2049" value="257" id="pa-farfield-points" name="pa-farfield-points">
+							</div>
+							<div class="form-group" id="pa-farfield-uv-bound-div">
+								<label for="pa-farfield-uv-bound">U/V Bound</label>
+								<input type="number" class="ff-digits-2" min="0.5" max="513" value="1" id="pa-farfield-uv-bound" name="pa-farfield-uv-bound" step="0.1">
+							</div>
+						</div>
 						<div id="pa-illumination-controls">
 							<h3>Illumination Wave</h3>
 						</div>
@@ -149,38 +180,6 @@
 				<div class="canvas-container plot-farfield">
 					<div class="canvas-wrapper">
 						<div id="pa-farfield-plot-2d"></div>
-					</div>
-					<div class="canvas-footer">
-						<div class="footer-group">
-							<div>
-								<label for="pa-farfield-domain">Domain</label>
-								<select id="pa-farfield-domain"></select>
-							</div>
-							<div>
-								<label for="pa-farfield-2d-scale">Scale</label>
-								<input type="number" class="ff-digits-2" max="200" min="5" value="40" id="pa-farfield-2d-scale" name="pa-farfield-2d-scale">
-							</div>
-							<div>
-								<label for="pa-farfield-frequency">freq. scale</label>
-								<input type="number" class="ff-spin" max="200" min="0" value="1" id="pa-farfield-frequency" name="pa-farfield-frequency" step="0.02">
-							</div>
-							<div>
-								<label for="pa-farfield-2d-colormap">CMap</label>
-								<select id="pa-farfield-2d-colormap" name="pa-farfield-2d-colormap"></select>
-							</div>
-							<div>
-								<label for="pa-farfield-points">Points</label>
-								<input type="number" class="ff-digits-4" min="11" max="2049" value="257" id="pa-farfield-points" name="pa-farfield-points">
-							</div>
-							<div id="pa-farfield-uv-bound-div">
-								<label for="pa-farfield-uv-bound">U/V Bound</label>
-								<input type="number" class="ff-digits-2" min="0.5" max="513" value="1" id="pa-farfield-uv-bound" name="pa-farfield-uv-bound" step="0.1">
-							</div>
-							<div>
-								<label for="pa-farfield-click-steer">Click to steer</label>
-								<input type="checkbox" id="pa-farfield-click-steer" name="pa-farfield-click-steer">
-							</div>
-						</div>
 					</div>
 				</div>
 				<div class="canvas-container plot-metrics">
