@@ -169,6 +169,33 @@ impl RadiatedPowerKernel {
 		);
 	}
 
+	pub fn form_matched_s_propagation(
+		&mut self,
+		z_ref: f32,
+		x: &[f32],
+		y: &[f32],
+		x_nn: f32,
+		att: f32,
+		eps_x: f32,
+		eps_y: f32,
+		freq: f32,
+		z_common_re: f32,
+		x_self: f32,
+	) {
+		self.state.form_matched_s_propagation(
+			z_ref,
+			x,
+			y,
+			x_nn,
+			att,
+			eps_x,
+			eps_y,
+			freq,
+			z_common_re,
+			x_self,
+		);
+	}
+
 	pub fn take_z0(&self) -> Vec<f64> {
 		self.state.z0.clone()
 	}

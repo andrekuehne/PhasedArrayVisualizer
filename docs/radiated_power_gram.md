@@ -156,7 +156,7 @@ X_{pq}=X_{nn}(d_\min/\rho)^\alpha
 
 One-port check: isolated \(P_H=P_0=1/2\) gives \(R=Z_\mathrm{ref}\). Per-port or common \(z_c=50\) with \(X_\mathrm{self}=0\) both give \(z_0=50\), \(S=0\), \(T=1\).
 
-The visualizer uses J0 + `form_matched_s` on geometry / element / `frequency_scale` / match style / \(z_c\) / \(X_\mathrm{self}\) / \(X_{nn},\alpha,\beta,A\) changes, then \(w=T a\) in `create_farfield_vectors` when Coupling is Matched. Oscillation \(\beta\) is passed as \(\beta_{\mathrm{UI}}\times\texttt{frequency_scale}\). Conjugate steer sets \(a\) from \(\arg(T^T F^\mathrm{iso})\) at the commanded \((\theta,\phi)\). Illumination is applied after \(T\). Full \(F^\mathrm{emb}\) on the plot mesh is not built.
+The visualizer Matching dropdown is Isolated / Per-port / Common Z0 / Propagation. Isolated uses geometric array factor. Per-port and Common Z0 call J0 + `form_matched_s` (\(\beta_{\mathrm{UI}}\times\texttt{frequency_scale}\)). Propagation calls `form_matched_s_propagation` (always common \(z_c\)): \(X_{pq}=X_{nn}(\mathrm{env}/\mathrm{env}_\mathrm{ref})\cos(\phi-\phi_\mathrm{ref})\) with \(\phi=2\pi f(\sqrt{\varepsilon_x}\lvert\Delta x\rvert+\sqrt{\varepsilon_y}\lvert\Delta y\rvert)\) and \(\mathrm{env}=e^{-\alpha_\lambda\rho}\); non-positive \(z_c\) becomes \(Z_\mathrm{ref}\). Then \(w=Ta\) in `create_farfield_vectors` when Matching is not Isolated. Conjugate steer sets \(a\) from \(\arg(T^T F^\mathrm{iso})\) at the commanded \((\theta,\phi)\). Illumination is applied after \(T\). Full \(F^\mathrm{emb}\) on the plot mesh is not built.
 
 ---
 

@@ -111,6 +111,62 @@ impl MatchedS {
 		}
 	}
 
+	/// Same Gram \(R\) as [`from_gram_coupled`], then the propagation overlay
+	/// \(X(\lvert\Delta x\rvert,\lvert\Delta y\rvert;\varepsilon_x,\varepsilon_y,\alpha_\lambda,f)\).
+	/// Always a common real \(z_c\) (non-positive or non-finite \(z_c\) becomes \(z_\mathrm{ref}\)).
+	pub fn from_gram_propagation(
+		p_re: &[f32],
+		p_im: &[f32],
+		n: usize,
+		z_ref: f64,
+		x: &[f32],
+		y: &[f32],
+		x_nn: f64,
+		att: f64,
+		eps_x: f64,
+		eps_y: f64,
+		freq: f64,
+		z_common_re: f64,
+		x_self: f64,
+	) -> Self {
+		let z_ref = if z_ref.is_finite() && z_ref > 0.0 {
+			z_ref
+		} else {
+			Z_REF
+		};
+		if n == 0 || p_re.len() != n * n {
+			return Self::empty();
+		}
+		let nn = n * n;
+		let scale = 2.0 * z_ref;
+		let mut r_re = vec![0.0f64; nn];
+		let mut r_im = vec![0.0f64; nn];
+		for i in 0..nn {
+			r_re[i] = scale * (p_re[i] as f64);
+			if p_im.len() == nn {
+				r_im[i] = scale * (p_im[i] as f64);
+			}
+		}
+		for p in 0..n {
+			r_im[p * n + p] = 0.0;
+		}
+
+		let mutual = add_propagation_reactance(&mut r_im, x, y, n, x_nn, att, eps_x, eps_y, freq);
+		let x_self = if x_self.is_finite() { x_self } else { 0.0 };
+		if x_self != 0.0 {
+			for p in 0..n {
+				r_im[p * n + p] = x_self;
+			}
+		}
+		let has_x = mutual || x_self != 0.0;
+		let zc = if z_common_re.is_finite() && z_common_re > 0.0 {
+			z_common_re
+		} else {
+			z_ref
+		};
+		Self::from_z_common(r_re, r_im, n, z_ref, zc, has_x)
+	}
+
 	/// Real \(z_0\) on \(\Re(Z)\); Hermitian Cholesky for \(S\) and \(T\).
 	fn from_z_real(r_re: Vec<f64>, r_im: Vec<f64>, n: usize, z_ref: f64) -> Self {
 		let nn = n * n;
@@ -353,6 +409,89 @@ fn add_mutual_reactance(
 				0.0
 			};
 			if xpq == 0.0 {
+				continue;
+			}
+			r_im[p * n + q] += xpq;
+			r_im[q * n + p] += xpq;
+			wrote = true;
+		}
+	}
+	wrote
+}
+
+/// \(X_{pq}=X_{nn}(\mathrm{env}/\mathrm{env}_\mathrm{ref})\cos(\phi-\phi_\mathrm{ref})\),
+/// \(\phi=2\pi f(\sqrt{\varepsilon_x}\lvert\Delta x\rvert+\sqrt{\varepsilon_y}\lvert\Delta y\rvert)\),
+/// \(\mathrm{env}=e^{-\alpha_\lambda\rho}\). Ref is the closest pair. Returns true if any
+/// off-diagonal was written.
+fn add_propagation_reactance(
+	r_im: &mut [f64],
+	x: &[f32],
+	y: &[f32],
+	n: usize,
+	x_nn: f64,
+	att: f64,
+	eps_x: f64,
+	eps_y: f64,
+	freq: f64,
+) -> bool {
+	if n < 2 || x.len() != n || y.len() != n {
+		return false;
+	}
+	if !x_nn.is_finite() || x_nn == 0.0 {
+		return false;
+	}
+	let att = if att.is_finite() && att >= 0.0 { att } else { 0.0 };
+	let eps_x = if eps_x.is_finite() && eps_x >= 0.0 {
+		eps_x
+	} else {
+		1.0
+	};
+	let eps_y = if eps_y.is_finite() && eps_y >= 0.0 {
+		eps_y
+	} else {
+		1.0
+	};
+	let freq = if freq.is_finite() && freq > 0.0 { freq } else { 1.0 };
+	let kx = 2.0 * std::f64::consts::PI * freq * eps_x.sqrt();
+	let ky = 2.0 * std::f64::consts::PI * freq * eps_y.sqrt();
+
+	let mut d_min = f64::INFINITY;
+	let mut dx_ref = 0.0;
+	let mut dy_ref = 0.0;
+	for p in 0..n {
+		for q in 0..p {
+			let dx = (x[p] as f64 - x[q] as f64).abs();
+			let dy = (y[p] as f64 - y[q] as f64).abs();
+			let rho = dx.hypot(dy);
+			if rho > 0.0 && rho < d_min {
+				d_min = rho;
+				dx_ref = dx;
+				dy_ref = dy;
+			}
+		}
+	}
+	if !d_min.is_finite() || d_min <= 0.0 {
+		return false;
+	}
+	let phi_ref = kx * dx_ref + ky * dy_ref;
+	let env_ref = (-att * d_min).exp();
+	if env_ref == 0.0 || !env_ref.is_finite() {
+		return false;
+	}
+
+	let mut wrote = false;
+	for p in 0..n {
+		for q in 0..p {
+			let dx = (x[p] as f64 - x[q] as f64).abs();
+			let dy = (y[p] as f64 - y[q] as f64).abs();
+			let rho = dx.hypot(dy);
+			if !(rho > 0.0) {
+				continue;
+			}
+			let env = (-att * rho).exp();
+			let phi = kx * dx + ky * dy;
+			let xpq = x_nn * (env / env_ref) * (phi - phi_ref).cos();
+			if !xpq.is_finite() || xpq == 0.0 {
 				continue;
 			}
 			r_im[p * n + q] += xpq;
@@ -1349,5 +1488,66 @@ mod tests {
 			(m.r_im[o * n + o + 1] - m.r_im[o * n + o + 2]).abs() > 1e-9,
 			"equal-ρ x/y arms split"
 		);
+	}
+
+	#[test]
+	fn propagation_nn_sign_flip_and_common_z0() {
+		let p_re = [0.5f32, 0.1, 0.05, 0.1, 0.5, 0.1, 0.05, 0.1, 0.5];
+		let p_im = [0.0f32; 9];
+		let x = [0.0f32, 0.5, 1.0];
+		let y = [0.0f32, 0.0, 0.0];
+		let x_nn = 10.0;
+		let zc = 45.0;
+		let m = MatchedS::from_gram_propagation(
+			&p_re, &p_im, 3, Z_REF, &x, &y, x_nn, 0.0, 1.0, 1.0, 1.0, zc, 0.0,
+		);
+		close(m.r_im[1], x_nn, 1e-12, "X01 nn");
+		close(m.r_im[3], x_nn, 1e-12, "X10");
+		close(m.r_im[2], -x_nn, 1e-12, "X02 flip");
+		close(m.r_re[1], 2.0 * Z_REF * 0.1, 1e-6, "R01 gram");
+		close(m.z0[0], zc, 0.0, "z0");
+		close(m.z0[1], zc, 0.0, "z0 1");
+		close(m.z0_im[0], 0.0, 0.0, "z0 im");
+	}
+
+	#[test]
+	fn propagation_eps_splits_xy_and_decay_shrinks() {
+		let n = 3;
+		let mut p_re = vec![0.05f32; n * n];
+		for p in 0..n {
+			p_re[p * n + p] = 0.5;
+		}
+		let p_im = vec![0.0f32; n * n];
+		let x = [0.0f32, 0.5, 0.0];
+		let y = [0.0f32, 0.0, 0.5];
+		let x_nn = 8.0;
+		let m = MatchedS::from_gram_propagation(
+			&p_re, &p_im, n, Z_REF, &x, &y, x_nn, 0.0, 1.0, 4.0, 1.0, Z_REF, 0.0,
+		);
+		close(m.r_im[1], x_nn, 1e-12, "X01 is ref");
+		assert!(
+			(m.r_im[2] - m.r_im[1]).abs() > 1e-9,
+			"εy≠εx splits equal-ρ arms"
+		);
+		close(m.r_im[2], m.r_im[2 * n], 1e-12, "X02 = X20");
+
+		let md = MatchedS::from_gram_propagation(
+			&p_re, &p_im, n, Z_REF, &[0.0, 0.5, 1.0], &[0.0, 0.0, 0.0], x_nn, 2.0, 1.0, 1.0, 1.0,
+			Z_REF, 0.0,
+		);
+		close(md.r_im[1], x_nn, 1e-12, "decay nn");
+		let far = x_nn * (-2.0_f64 * (1.0 - 0.5)).exp() * (-1.0);
+		close(md.r_im[2], far, 1e-9, "decay far");
+		assert!(md.r_im[2].abs() < md.r_im[1].abs(), "farther pair weaker");
+	}
+
+	#[test]
+	fn propagation_invalid_zc_clamps_to_zref() {
+		let p_re = [0.5f32];
+		let p_im = [0.0f32];
+		let m = MatchedS::from_gram_propagation(
+			&p_re, &p_im, 1, Z_REF, &[0.0], &[0.0], 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0,
+		);
+		close(m.z0[0], Z_REF, 0.0, "z0 clamp");
 	}
 }

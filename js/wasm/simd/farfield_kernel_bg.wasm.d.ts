@@ -81,6 +81,7 @@ export const radiatedpowerkernel_fill_isolated: (a: number, b: number, c: number
 export const radiatedpowerkernel_fill_isolated_range: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
 export const radiatedpowerkernel_form_gram: (a: number) => void;
 export const radiatedpowerkernel_form_matched_s: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => void;
+export const radiatedpowerkernel_form_matched_s_propagation: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => void;
 export const radiatedpowerkernel_match_iterations: (a: number) => number;
 export const radiatedpowerkernel_match_residual: (a: number) => number;
 export const radiatedpowerkernel_n_elements: (a: number) => number;

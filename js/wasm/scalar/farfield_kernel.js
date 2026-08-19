@@ -593,6 +593,25 @@ export class RadiatedPowerKernel {
         wasm.radiatedpowerkernel_form_matched_s(this.__wbg_ptr, z_ref, ptr0, len0, ptr1, len1, x_nn, alpha, beta, aniso, z_common_re, x_self);
     }
     /**
+     * @param {number} z_ref
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} x_nn
+     * @param {number} att
+     * @param {number} eps_x
+     * @param {number} eps_y
+     * @param {number} freq
+     * @param {number} z_common_re
+     * @param {number} x_self
+     */
+    form_matched_s_propagation(z_ref, x, y, x_nn, att, eps_x, eps_y, freq, z_common_re, x_self) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_form_matched_s_propagation(this.__wbg_ptr, z_ref, ptr0, len0, ptr1, len1, x_nn, att, eps_x, eps_y, freq, z_common_re, x_self);
+    }
+    /**
      * @returns {number}
      */
     match_iterations() {

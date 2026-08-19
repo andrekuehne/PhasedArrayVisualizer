@@ -482,4 +482,66 @@ describe('matched S from J0 Prad', () => {
 		assert.ok(maxSii > 0.01, `common max |Sii|=${maxSii}`);
 		assert.ok(maxSii > maxPer * 10, `common ${maxSii} vs per-port ${maxPer}`);
 	});
+
+	test('propagation: closest pair is Xnn, next-nearest flips, R unchanged', () => {
+		const k = kernels.simd;
+		const x = new Float32Array([0, 0.5, 1.0]);
+		const y = new Float32Array([0, 0, 0]);
+		const xnn = 10;
+		const zc = 45;
+		k.set_quadrature(24, 2);
+		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s(Z_REF, x, y, 0, 0, 0, 0, zc, 0);
+		const r01 = k.take_z_re()[1];
+		k.form_matched_s_propagation(Z_REF, x, y, xnn, 0, 1, 1, 1, zc, 0);
+		const zIm = k.take_z_im();
+		const zRe = k.take_z_re();
+		const z0 = k.take_z0();
+		close(zIm[1], xnn, 1e-6, 'X01 nn');
+		close(zIm[3], xnn, 1e-6, 'X10');
+		close(zIm[2], -xnn, 1e-6, 'X02 flip');
+		close(zRe[1], r01, 1e-6, 'R01 gram');
+		close(z0[0], zc, 0, 'z0');
+		close(z0[1], zc, 0, 'z0 1');
+		close(k.take_z0_im()[0], 0, 0, 'z0 im');
+	});
+
+	test('propagation: εx≠εy splits equal-distance x/y pairs', () => {
+		const k = kernels.simd;
+		const x = new Float32Array([0, 0.5, 0]);
+		const y = new Float32Array([0, 0, 0.5]);
+		const n = 3;
+		const xnn = 8;
+		k.set_quadrature(24, 2);
+		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s_propagation(Z_REF, x, y, xnn, 0, 1, 4, 1, Z_REF, 0);
+		const zIm = k.take_z_im();
+		close(zIm[1], xnn, 1e-6, 'X01 ref');
+		assert.ok(Math.abs(zIm[2] - zIm[1]) > 1e-6, 'εy splits y-arm');
+		close(zIm[2], zIm[2 * n], 1e-12, 'X02 = X20');
+	});
+
+	test('propagation: α_λ shrinks farther pairs', () => {
+		const k = kernels.simd;
+		const x = new Float32Array([0, 0.5, 1.0]);
+		const y = new Float32Array([0, 0, 0]);
+		const xnn = 8;
+		const att = 2;
+		k.set_quadrature(24, 2);
+		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s_propagation(Z_REF, x, y, xnn, att, 1, 1, 1, Z_REF, 0);
+		const zIm = k.take_z_im();
+		close(zIm[1], xnn, 1e-6, 'nn');
+		const far = xnn * Math.exp(-att * (1.0 - 0.5)) * (-1);
+		close(zIm[2], far, 1e-6, 'far');
+		assert.ok(Math.abs(zIm[2]) < Math.abs(zIm[1]), 'farther weaker');
+	});
+
+	test('propagation: invalid zc clamps to Z_REF', () => {
+		const k = kernels.simd;
+		k.set_quadrature(8, 2);
+		k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s_propagation(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, 1, 1, 1, 0, 0);
+		close(k.take_z0()[0], Z_REF, 0, 'z0 clamp');
+	});
 });

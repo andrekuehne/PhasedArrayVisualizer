@@ -318,6 +318,52 @@ impl PradState {
 		self.match_iterations = m.iterations;
 		self.match_residual = m.residual;
 	}
+
+	/// Like [`Self::form_matched_s`] with the propagation \(X\) overlay.
+	/// Always a common real \(z_c\) (non-positive \(z_c\) becomes \(z_\mathrm{ref}\)).
+	pub fn form_matched_s_propagation(
+		&mut self,
+		z_ref: f32,
+		x: &[f32],
+		y: &[f32],
+		x_nn: f32,
+		att: f32,
+		eps_x: f32,
+		eps_y: f32,
+		freq: f32,
+		z_common_re: f32,
+		x_self: f32,
+	) {
+		if self.n == 0 || self.p_re.len() != self.n * self.n {
+			self.clear_matched();
+			return;
+		}
+		let m = MatchedS::from_gram_propagation(
+			&self.p_re,
+			&self.p_im,
+			self.n,
+			z_ref as f64,
+			x,
+			y,
+			x_nn as f64,
+			att as f64,
+			eps_x as f64,
+			eps_y as f64,
+			freq as f64,
+			z_common_re as f64,
+			x_self as f64,
+		);
+		self.z0 = m.z0;
+		self.z0_im = m.z0_im;
+		self.r_re = m.r_re;
+		self.r_im = m.r_im;
+		self.s_re = m.s_re;
+		self.s_im = m.s_im;
+		self.t_re = m.t_re;
+		self.t_im = m.t_im;
+		self.match_iterations = m.iterations;
+		self.match_residual = m.residual;
+	}
 }
 
 fn radial_integral(rho2: f32, k: f32, coeff: &[f64], s_mu: &[f32]) -> f32 {
@@ -858,5 +904,23 @@ mod tests {
 			max_sii = max_sii.max(mag_ii);
 		}
 		assert!(max_sii > 0.01, "common |Sii|={max_sii}");
+	}
+
+	#[test]
+	fn j0_propagation_nn_sign_flip() {
+		use crate::match_s::Z_REF;
+		let mut s = PradState::new();
+		s.set_quadrature(24, 2);
+		let x = [0.0f32, 0.5, 1.0];
+		let y = [0.0f32, 0.0, 0.0];
+		s.compute_j0(&x, &y, 1.0, PATTERN_ISOTROPIC, 0.0);
+		s.form_matched_s_propagation(
+			Z_REF as f32, &x, &y, 10.0, 0.0, 1.0, 1.0, 1.0, Z_REF as f32, 0.0,
+		);
+		close64(s.r_im[1], 10.0, 1e-9, "X01 nn");
+		close64(s.r_im[2], -10.0, 1e-9, "X02 flip");
+		close64(s.r_im[1], s.r_im[3], 1e-12, "X01 = X10");
+		close64(s.z0[0], Z_REF, 0.0, "z0");
+		close64(s.r_re[0], 2.0 * Z_REF as f64 * s.p_re[0] as f64, 1e-6, "R00 gram");
 	}
 }
