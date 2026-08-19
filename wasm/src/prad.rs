@@ -274,8 +274,8 @@ impl PradState {
 		self.match_residual = 0.0;
 	}
 
-	/// \(R = 2 Z_\mathrm{ref} P_H\), optional \(jX(\Delta x,\Delta y)\), match, power-wave \(S\).
-	/// Uses the current Gram; does not fill \(A\).
+	/// \(R = 2 Z_\mathrm{ref} P_H\), optional \(jX(\Delta x,\Delta y)+jX_\mathrm{self}I\),
+	/// real \(z_0\), power-wave \(S\). Uses the current Gram; does not fill \(A\).
 	/// Finite \(z_\mathrm{common,re}>0\) skips the per-port solver.
 	pub fn form_matched_s(
 		&mut self,
@@ -287,7 +287,7 @@ impl PradState {
 		beta: f32,
 		aniso: f32,
 		z_common_re: f32,
-		z_common_im: f32,
+		x_self: f32,
 	) {
 		if self.n == 0 || self.p_re.len() != self.n * self.n {
 			self.clear_matched();
@@ -305,7 +305,7 @@ impl PradState {
 			beta as f64,
 			aniso as f64,
 			z_common_re as f64,
-			z_common_im as f64,
+			x_self as f64,
 		);
 		self.z0 = m.z0;
 		self.z0_im = m.z0_im;
@@ -820,7 +820,7 @@ mod tests {
 	}
 
 	#[test]
-	fn j0_irregular_reactance_matches_and_is_complex() {
+	fn j0_irregular_reactance_is_real_z0() {
 		use crate::match_s::{TAU, Z_REF};
 		let mut s = PradState::new();
 		s.set_quadrature(24, 2);
@@ -828,17 +828,13 @@ mod tests {
 		let y = [0.0f32, 0.25, -0.25];
 		s.compute_j0(&x, &y, 1.0, PATTERN_ISOTROPIC, 0.0);
 		s.form_matched_s(Z_REF as f32, &x, &y, 10.0, 2.0, 0.0, 0.0, 0.0, 0.0);
-		let n = 3;
 		assert!(s.match_residual < TAU, "residual {}", s.match_residual);
-		assert!(s.z0_im.iter().any(|v| v.abs() > 1e-6), "z0 imag");
+		assert!(s.z0_im.iter().all(|v| v.abs() == 0.0), "z0 real");
 		assert!(s.r_im[1].abs() > 1.0, "X01");
 		close64(s.r_im[1], s.r_im[3], 1e-12, "X01 = X10");
-		for p in 0..n {
-			let mag_ii = (s.s_re[p * n + p] * s.s_re[p * n + p]
-				+ s.s_im[p * n + p] * s.s_im[p * n + p])
-				.sqrt();
-			assert!(mag_ii < 2e-3, "|S{p}{p}|={mag_ii}");
-		}
+		close64(s.r_im[0], 0.0, 0.0, "X00");
+		let mag00 = (s.s_re[0] * s.s_re[0] + s.s_im[0] * s.s_im[0]).sqrt();
+		assert!(mag00 > 1e-3, "|S00| leftover reactance {mag00}");
 	}
 
 	#[test]

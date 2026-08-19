@@ -1,6 +1,6 @@
 # Radiated-power Gram (WASM status)
 
-Handoff for [approximate_matched_basis.md](approximate_matched_basis.md). **§5–9 (through \(T\)) are implemented**: isolated fields → Hermitian \(P_H\) (product kernel and \(J_0\)), \(R\), optional \(jX(\Delta x,\Delta y)\), per-port match (real \(z_0\), or complex conjugate when \(X_{nn}\neq 0\)) or a common complex \(z_c\), power-wave \(S\) and \(T\). The visualizer has Isolated/Matched coupling, Per-port/Common Z0 match style, and Geometric/Conjugate steer. \(F^\mathrm{emb}\) is not formed on a quadrature grid (the GUI uses \(w=Ta\)).
+Handoff for [approximate_matched_basis.md](approximate_matched_basis.md). **§5–9 (through \(T\)) are implemented**: isolated fields → Hermitian \(P_H\) (product kernel and \(J_0\)), \(R\), optional \(jX(\Delta x,\Delta y)+jX_\mathrm{self}I\), per-port or common **real** \(z_0\), power-wave \(S\) and \(T\). The visualizer has Isolated/Matched coupling, Per-port/Common Z0 match style, and Geometric/Conjugate steer. \(F^\mathrm{emb}\) is not formed on a quadrature grid (the GUI uses \(w=Ta\)).
 
 Intent: keep the **φ-dependent** product quadrature as the general kernel (needed later for rotated / polarized patterns). Do not auto-switch `compute()` or `runPradJob` to J0. Use `compute_j0` only for planar axisymmetric \(D(\mu)\).
 
@@ -62,7 +62,7 @@ where \(D_\lambda\) is the array electrical diameter in wavelengths.
 | [wasm/src/quadrature.rs](../wasm/src/quadrature.rs) | Gauss–Legendre + `HemisphereQuad` (1-D μ kept for J0) |
 | [wasm/src/bessel.rs](../wasm/src/bessel.rs) | f32 \(J_0\) (fdlibm `j0f`) |
 | [wasm/src/prad.rs](../wasm/src/prad.rs) | Isolated \(A\), blocked Hermitian Gram, `P0`, J0 unique-ρ Gram |
-| [wasm/src/match_s.rs](../wasm/src/match_s.rs) | f64 \(Z=R+jX\), per-port or common \(z_0\), Kurokawa \(S\) and \(T\) |
+| [wasm/src/match_s.rs](../wasm/src/match_s.rs) | f64 \(Z=R+jX\), per-port or common real \(z_0\), power-wave \(S\) and \(T\) |
 | [wasm/src/lib.rs](../wasm/src/lib.rs) | `RadiatedPowerKernel` wasm-bindgen |
 | [js/wasm/farfield-worker.js](../js/wasm/farfield-worker.js) | Same worker: far-field tiles **and** `run_prad` panels. Browser Dedicated Worker or Node `worker_threads` |
 | [js/wasm/farfield-pool.js](../js/wasm/farfield-pool.js) | `runPradJob`, `mergeGrams`, `pradWorkerCount`, `stopFarfieldPool`; Node can pass `{Worker, wasmPath, workers}` |
@@ -88,12 +88,12 @@ form_gram()
 compute(...)                    # fill_isolated + form_gram
 compute_j0(...)                 # axisymmetric planar fast path (Gauss-μ only)
 take_re() / take_im()           # row-major N×N f32 Gram
-form_matched_s(z_ref, x, y, x_nn, alpha, beta, aniso, z_common_re, z_common_im)
-                                # R, optional jX(Δx,Δy), z0, S (z_ref≤0 → 50 Ω;
-                                # Re(z_common)>0 → common z_c, else per-port)
-take_z0() / take_z0_im()        # length-N f64; imag is 0 unless X_nn≠0 or Im(z_c)≠0
+form_matched_s(z_ref, x, y, x_nn, alpha, beta, aniso, z_common_re, x_self)
+                                # R, optional jX(Δx,Δy)+j X_self I, z0, S
+                                # (z_ref≤0 → 50 Ω; Re(z_common)>0 → common z_c)
+take_z0() / take_z0_im()        # length-N f64; imag is identically 0
 take_s_re() / take_s_im()       # row-major N×N f64
-take_t_re() / take_t_im()       # row-major N×N f64, Kurokawa \(T\)
+take_t_re() / take_t_im()       # row-major N×N f64, real-reference \(T\)
 match_iterations() / match_residual()
 n_samples()                     # full quadrature M = n_mu*n_phi
 n_elements()
@@ -136,26 +136,27 @@ Runs on whatever Gram is already in the kernel (`compute_j0` or `compute` / pane
 
 \[
 R = 2\,Z_\mathrm{ref}\,P_H,\qquad
-Z = R + jX(\Delta x,\Delta y),
+Z = R + jX(\Delta x,\Delta y) + j X_\mathrm{self} I,
 \]
 
 \[
+X_{pp}=X_\mathrm{self},\qquad
 X_{pq}=X_{nn}(d_\min/\rho)^\alpha
 \cos\bigl(\beta(\rho/d_\min-1)\bigr)
 \bigl(1+A\cos 2\varphi\bigr),
 \quad \varphi=\mathrm{atan2}(\Delta y,\Delta x).
 \]
 
-\(X_{nn}=0\), empty `x`/`y`, or length mismatch skips \(X\) (real \(z_0\) path). \(\beta=0\), \(A=0\) is the older radial power law. Constants: \(Z_\mathrm{ref}=50\,\Omega\), \(\varepsilon_z=10^{-9}\,\Omega\), \(K_\mathrm{max}=200\), \(\tau=10^{-3}\,\Omega\).
+\(X_{nn}=0\), empty `x`/`y`, or length mismatch skips the mutual overlay. \(X_\mathrm{self}=0\) skips the diagonal residual. \(\beta=0\), \(A=0\) is the older radial power law. Constants: \(Z_\mathrm{ref}=50\,\Omega\), \(\varepsilon_z=10^{-9}\,\Omega\), \(K_\mathrm{max}=200\), \(\tau=10^{-3}\,\Omega\).
 
-- **\(X_{nn}=0\):** match on \(\Re(R)\); \(S=D^{-1/2}(R-D)\,\mathrm{solve}(R+D,\,D^{1/2})\). Real SPD / Hermitian Cholesky.
-- **\(X_{nn}\neq 0\):** conjugate match \(z_0=Z_\mathrm{in}^*\); Kurokawa \(S=G^{-1}(Z-D^*)(Z+D)^{-1}G\) with \(G=\mathrm{diag}\sqrt{\Re(z_0)}\). Complex LU on \(Z+D\). After \(K_\mathrm{max}/4\), under-relax \(\beta=1/2\).
+- **\(X=0\):** match on \(\Re(R)\); \(S=D^{-1/2}(R-D)\,\mathrm{solve}(R+D, D^{1/2})\). Real SPD / Hermitian Cholesky.
+- **\(X\neq 0\):** real \(z_0\) on \(\Re(Z_\mathrm{in})\) of the full \(Z\); \(S=D^{-1/2}(Z-D)(Z+D)^{-1}D^{1/2}\) with complex LU. After \(K_\mathrm{max}/4\), under-relax \(\beta=1/2\). Leftover \(\Im(Z_\mathrm{in})\) stays in \(Z\), so \(\mathrm{diag}(S)\) need not vanish.
 
-`form_matched_s(z_ref, x, y, x_nn, alpha, beta, aniso, z_common_re, z_common_im)` with `z_ref <= 0` or non-finite uses \(50\,\Omega\). Finite \(\Re(z_c)>0\) skips the per-port solver and sets every \(z_{0,p}=z_c\) (Kurokawa if \(\Im(z_c)\neq 0\) or \(X_{nn}\neq 0\)). Otherwise after a successful per-port match, \(\mathrm{diag}(S)\approx 0\). For J0 / axisymmetric planar elements and \(X_{nn}=0\) with real \(z_0\), \(R\), \(S\), and \(T\) are real.
+`form_matched_s(z_ref, x, y, x_nn, alpha, beta, aniso, z_common_re, x_self)` with `z_ref <= 0` or non-finite uses \(50\,\Omega\). Finite \(\Re(z_c)>0\) skips the per-port solver and sets every \(z_{0,p}=z_c\) (real). Otherwise the per-port solver matches \(\Re(Z_\mathrm{in})\). For J0 / axisymmetric planar elements and \(X=0\), \(R\), \(S\), and \(T\) are real. `take_z0_im` is identically 0.
 
-One-port check: isolated \(P_H=P_0=1/2\) gives \(R=Z_\mathrm{ref}\). Per-port or common \(z_c=50\) both give \(z_0=50\), \(S=0\), \(T=1\).
+One-port check: isolated \(P_H=P_0=1/2\) gives \(R=Z_\mathrm{ref}\). Per-port or common \(z_c=50\) with \(X_\mathrm{self}=0\) both give \(z_0=50\), \(S=0\), \(T=1\).
 
-The visualizer uses J0 + `form_matched_s` on geometry / element / `frequency_scale` / match style / \(z_c\) / \(X_{nn},\alpha,\beta,A\) changes, then \(w=T a\) in `create_farfield_vectors` when Coupling is Matched. Oscillation \(\beta\) is passed as \(\beta_{\mathrm{UI}}\times\texttt{frequency_scale}\). Conjugate steer sets \(a\) from \(\arg(T^T F^\mathrm{iso})\) at the commanded \((\theta,\phi)\). Illumination is applied after \(T\). Full \(F^\mathrm{emb}\) on the plot mesh is not built.
+The visualizer uses J0 + `form_matched_s` on geometry / element / `frequency_scale` / match style / \(z_c\) / \(X_\mathrm{self}\) / \(X_{nn},\alpha,\beta,A\) changes, then \(w=T a\) in `create_farfield_vectors` when Coupling is Matched. Oscillation \(\beta\) is passed as \(\beta_{\mathrm{UI}}\times\texttt{frequency_scale}\). Conjugate steer sets \(a\) from \(\arg(T^T F^\mathrm{iso})\) at the commanded \((\theta,\phi)\). Illumination is applied after \(T\). Full \(F^\mathrm{emb}\) on the plot mesh is not built.
 
 ---
 
@@ -188,7 +189,7 @@ node --test tests/prad-bench.test.js
 node --test tests/matched-s.test.js
 ```
 
-Rust covers \(N=1\) power, coincident/far pairs, Hermitian, quadrature convergence, naive Gram, **panel sum = full Gram**, **J0 vs product**, unique-ρ collapse, and **matched \(S\)/\(T\)**: N=1 \(S=0\), \(T=1\), far-pair, residual \(<\tau\), symmetry, pairwise \(jX(\Delta x,\Delta y)\) (including irregular / sunflower-like geometry, oscillation \(\beta\), and location \(A\)). JS prints 8×8 \(S_{ii}\) / worst \(|S_{ij}|\), checks \(w=Ta\), conjugate vs geometric phases, a three-element \(X_{nn}\) case, and \(\beta\)/\(A\) overlays.
+Rust covers \(N=1\) power, coincident/far pairs, Hermitian, quadrature convergence, naive Gram, **panel sum = full Gram**, **J0 vs product**, unique-ρ collapse, and **matched \(S\)/\(T\)**: N=1 \(S=0\), \(T=1\), far-pair, residual \(<\tau\), symmetry, pairwise \(jX(\Delta x,\Delta y)\) plus \(X_\mathrm{self}\) on \(\mathrm{diag}(Z)\), real \(z_0\). JS prints 8×8 \(S_{ii}\) / worst \(|S_{ij}|\), checks \(w=Ta\), conjugate vs geometric phases, a three-element \(X_{nn}\) case, and \(\beta\)/\(A\) overlays.
 
 ---
 

@@ -1,5 +1,6 @@
 /**
- * Matched S-matrix from the J0 radiated-power Gram (§6–8), including optional \(jX(\Delta x,\Delta y)\).
+ * Matched S-matrix from the J0 radiated-power Gram (§6–8), including optional
+ * \(jX(\Delta x,\Delta y)+jX_\mathrm{self}I\) at a real \(z_0\).
  *
  * Run from the repo root:
  *   node --test tests/matched-s.test.js
@@ -324,7 +325,7 @@ describe('matched S from J0 Prad', () => {
 		assert.ok(maxEmbGeo > 1e-4, `aligned embedded still differs from geometric ${maxEmbGeo}`);
 	});
 
-	test('three irregular points with Xnn: complex S, tiny Sii', () => {
+	test('three irregular points with Xnn: real z0, leftover Sii', () => {
 		const k = kernels.simd;
 		const x = new Float32Array([0, 0.5, 1.0]);
 		const y = new Float32Array([0, 0.25, -0.25]);
@@ -335,18 +336,21 @@ describe('matched S from J0 Prad', () => {
 		const sRe = k.take_s_re();
 		const sIm = k.take_s_im();
 		const z0Im = k.take_z0_im();
+		const zIm = k.take_z_im();
 		assert.equal(sRe.length, n * n);
 		assert.ok(k.match_residual() < TAU, `residual ${k.match_residual()}`);
 		for (let i = 0; i < n; i++){
-			const sii = mag(sRe[i * n + i], sIm[i * n + i]);
-			assert.ok(sii < 2e-3, `|S${i}${i}|=${sii}`);
+			close(z0Im[i], 0, 0, `z0_im[${i}]`);
+			close(zIm[i * n + i], 0, 0, `X${i}${i}`);
 		}
+		let maxSii = 0;
+		for (let i = 0; i < n; i++){
+			maxSii = Math.max(maxSii, mag(sRe[i * n + i], sIm[i * n + i]));
+		}
+		assert.ok(maxSii > 1e-3, `|Sii| leftover reactance ${maxSii}`);
 		let maxIm = 0;
 		for (let i = 0; i < n * n; i++) maxIm = Math.max(maxIm, Math.abs(sIm[i]));
 		assert.ok(maxIm > 1e-6, `S should be complex, max|Im|=${maxIm}`);
-		let maxZim = 0;
-		for (let i = 0; i < z0Im.length; i++) maxZim = Math.max(maxZim, Math.abs(z0Im[i]));
-		assert.ok(maxZim > 1e-6, `z0 should be complex, max|Im|=${maxZim}`);
 	});
 
 	test('right-angle Xnn with Location A splits equal-distance pairs', () => {
@@ -406,26 +410,48 @@ describe('matched S from J0 Prad', () => {
 		close(k.take_z0()[0], zc, 0, 'z0');
 	});
 
-	test('N=1 common complex zc: Kurokawa S = (Z-zc*)/(Z+zc)', () => {
+	test('N=1 common Self X on Z: S = (R+jX-zc)/(R+jX+zc)', () => {
 		const k = kernels.simd;
-		const zcRe = 50;
-		const zcIm = 10;
+		const zc = 50;
+		const xSelf = 10;
 		k.set_quadrature(8, 2);
 		k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, 0, 0, zcRe, zcIm);
+		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, 0, 0, zc, xSelf);
 		const zRe = k.take_z_re()[0];
 		const zIm = k.take_z_im()[0];
-		const numRe = zRe - zcRe;
-		const numIm = zIm + zcIm;
-		const denRe = zRe + zcRe;
-		const denIm = zIm + zcIm;
+		const numRe = zRe - zc;
+		const numIm = zIm;
+		const denRe = zRe + zc;
+		const denIm = zIm;
 		const d2 = denRe * denRe + denIm * denIm;
 		const sRe = (numRe * denRe + numIm * denIm) / d2;
 		const sIm = (numIm * denRe - numRe * denIm) / d2;
+		close(zIm, xSelf, 0, 'X11');
 		close(k.take_s_re()[0], sRe, 1e-8, 'S11 re');
 		close(k.take_s_im()[0], sIm, 1e-8, 'S11 im');
-		close(k.take_z0()[0], zcRe, 0, 'z0 re');
-		close(k.take_z0_im()[0], zcIm, 0, 'z0 im');
+		close(k.take_z0()[0], zc, 0, 'z0 re');
+		close(k.take_z0_im()[0], 0, 0, 'z0 im');
+	});
+
+	test('N=1 per-port Self X leaves S11 = jX/(2R+jX)', () => {
+		const k = kernels.simd;
+		const xSelf = 10;
+		k.set_quadrature(8, 2);
+		k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, 0, 0, 0, xSelf);
+		const r = k.take_z_re()[0];
+		const denRe = 2 * r;
+		const denIm = xSelf;
+		const d2 = denRe * denRe + denIm * denIm;
+		const sRe = (xSelf * denIm) / d2;
+		const sIm = (xSelf * denRe) / d2;
+		close(k.take_z0()[0], r, 1e-5, 'z0 = R');
+		close(k.take_z0_im()[0], 0, 0, 'z0 im');
+		close(k.take_z_im()[0], xSelf, 0, 'X11');
+		close(k.take_s_re()[0], sRe, 1e-8, 'S11 re');
+		close(k.take_s_im()[0], sIm, 1e-8, 'S11 im');
+		assert.ok(mag(k.take_s_re()[0], k.take_s_im()[0]) > 1e-3, 'S11 from leftover X');
+		assert.ok(k.match_residual() < TAU, `residual ${k.match_residual()}`);
 	});
 
 	test('8×8 common Z0 is flat and |Sii| exceeds per-port', () => {

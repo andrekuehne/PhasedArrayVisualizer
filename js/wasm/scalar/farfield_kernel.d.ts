@@ -60,7 +60,7 @@ export class RadiatedPowerKernel {
     fill_isolated(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number): void;
     fill_isolated_range(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number, sample0: number, sample_count: number): void;
     form_gram(): void;
-    form_matched_s(z_ref: number, x: Float32Array, y: Float32Array, x_nn: number, alpha: number, beta: number, aniso: number, z_common_re: number, z_common_im: number): void;
+    form_matched_s(z_ref: number, x: Float32Array, y: Float32Array, x_nn: number, alpha: number, beta: number, aniso: number, z_common_re: number, x_self: number): void;
     match_iterations(): number;
     match_residual(): number;
     n_elements(): number;

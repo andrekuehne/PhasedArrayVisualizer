@@ -154,7 +154,7 @@ impl RadiatedPowerKernel {
 		beta: f32,
 		aniso: f32,
 		z_common_re: f32,
-		z_common_im: f32,
+		x_self: f32,
 	) {
 		self.state.form_matched_s(
 			z_ref,
@@ -165,7 +165,7 @@ impl RadiatedPowerKernel {
 			beta,
 			aniso,
 			z_common_re,
-			z_common_im,
+			x_self,
 		);
 	}
 

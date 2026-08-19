@@ -1,5 +1,6 @@
 # Change Log
 ## 8/19/2026
+- Matched coupling now keeps a purely real port reference. Self X (Ω) is a common diagonal residual on Z (the old Im(Z0) control); Mutual X is the pairwise overlay. Per-port matches Re(Z_in) only, so leftover reactance stays in Z and in S_ii. Common Z0 is a single real z_c (default 45 Ω).
 - Matched coupling's optional mutual reactance is now a pairwise kernel on (Δx, Δy): the old X_nn (d_min/ρ)^α tail plus Oscillation β (sign-changing with distance) and Location A (x vs y at the same distance). Defaults β = 0, A = 0 keep the previous overlay. Works for sunflower and other irregular layouts; β is scaled by frequency.
 
 ## 8/18/2026

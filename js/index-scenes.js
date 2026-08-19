@@ -134,7 +134,7 @@ export class SceneControlPhasedArray extends SceneControl{
 		const anisoDiv = document.getElementById(this.prepend + '-coupling-aniso-div');
 		if (styleDiv) styleDiv.style.display = showX ? 'flex' : 'none';
 		if (z0ReDiv) z0ReDiv.style.display = showZ0 ? 'flex' : 'none';
-		if (z0ImDiv) z0ImDiv.style.display = showZ0 ? 'flex' : 'none';
+		if (z0ImDiv) z0ImDiv.style.display = showX ? 'flex' : 'none';
 		if (xnnDiv) xnnDiv.style.display = showX ? 'flex' : 'none';
 		if (alphaDiv) alphaDiv.style.display = showX ? 'flex' : 'none';
 		if (betaDiv) betaDiv.style.display = showX ? 'flex' : 'none';
@@ -185,14 +185,15 @@ export class SceneControlPhasedArray extends SceneControl{
 		const v = Number(this.find_element('coupling-z0-re').value);
 		return Number.isFinite(v) && v > 0 ? v : Z_REF;
 	}
-	couplingZ0Im(){
+	couplingXSelf(){
 		const v = Number(this.find_element('coupling-z0-im').value);
 		return Number.isFinite(v) ? v : 0;
 	}
-	/** Common-Z0 kernel args; both 0 selects the per-port solver. */
+	/** Common-Z0 kernel args: [z_c, x_self]. Per-port passes z_c = 0 so the solver runs. */
 	commonZ0Args(){
-		if (this.matchStyle() !== 'common') return [0, 0];
-		return [this.couplingZ0Re(), this.couplingZ0Im()];
+		const xSelf = this.couplingXSelf();
+		if (this.matchStyle() !== 'common') return [0, xSelf];
+		return [this.couplingZ0Re(), xSelf];
 	}
 	frequencyScale(){
 		const ele = this.parent.find_element('farfield-frequency', false);
@@ -220,7 +221,7 @@ export class SceneControlPhasedArray extends SceneControl{
 		const alpha = this.couplingAlpha();
 		const beta = this.couplingBeta();
 		const aniso = this.couplingAniso();
-		const [zcRe, zcIm] = this.commonZ0Args();
+		const [zcRe, xSelf] = this.commonZ0Args();
 		if (
 			pa.tRe && pa.tRe.length === n * n
 			&& pa.zRe && pa.zRe.length === n * n
@@ -232,13 +233,13 @@ export class SceneControlPhasedArray extends SceneControl{
 			&& this._matchedBeta === beta
 			&& this._matchedAniso === aniso
 			&& this._matchedZ0Re === zcRe
-			&& this._matchedZ0Im === zcIm
+			&& this._matchedZ0Im === xSelf
 		) return;
 		const kernel = getRadiatedPowerKernel();
 		const nMu = nMuFromGeometry(pa.geometry, freq);
 		kernel.set_quadrature(nMu, 2);
 		kernel.compute_j0(pa.geometry.x, pa.geometry.y, freq, kind, elemN);
-		kernel.form_matched_s(Z_REF, pa.geometry.x, pa.geometry.y, xnn, alpha, beta * freq, aniso, zcRe, zcIm);
+		kernel.form_matched_s(Z_REF, pa.geometry.x, pa.geometry.y, xnn, alpha, beta * freq, aniso, zcRe, xSelf);
 		pa.set_matched_basis(
 			kernel.take_z0(),
 			kernel.take_s_re(),
@@ -257,7 +258,7 @@ export class SceneControlPhasedArray extends SceneControl{
 		this._matchedBeta = beta;
 		this._matchedAniso = aniso;
 		this._matchedZ0Re = zcRe;
-		this._matchedZ0Im = zcIm;
+		this._matchedZ0Im = xSelf;
 	}
 	/**
 	* Add callable objects to queue.
@@ -323,7 +324,7 @@ export class SceneControlPhasedArray extends SceneControl{
 			const n = this.pa ? this.pa.size : 0;
 			const hasT = this.pa && this.pa.tRe && this.pa.tRe.length === n * n;
 			const hasZ = this.pa && this.pa.zRe && this.pa.zRe.length === n * n;
-			const [zcRe, zcIm] = this.commonZ0Args();
+			const [zcRe, xSelf] = this.commonZ0Args();
 			const basisDirty = this.pa === null
 				|| !hasT
 				|| !hasZ
@@ -335,7 +336,7 @@ export class SceneControlPhasedArray extends SceneControl{
 				|| this._matchedBeta !== this.couplingBeta()
 				|| this._matchedAniso !== this.couplingAniso()
 				|| this._matchedZ0Re !== zcRe
-				|| this._matchedZ0Im !== zcIm;
+				|| this._matchedZ0Im !== xSelf;
 			if (basisDirty){
 				queue.add('Computing matched S...', () => {
 					if (this.couplingMode() !== 'matched' && !this._matrix_domain_selected()) return;
