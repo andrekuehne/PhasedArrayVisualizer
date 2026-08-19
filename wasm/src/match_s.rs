@@ -242,20 +242,8 @@ impl MatchedS {
 			}
 		}
 
-		fill_rre_plus_d(&r_re, &z0, n, &mut work);
-		let ydiag = inverse_diag_spd(&mut work, n);
-		let mut residual = 0.0f64;
-		for p in 0..n {
-			let ypp = ydiag[p];
-			let zin = if ypp.abs() < 1e-30 {
-				f64::INFINITY
-			} else {
-				1.0 / ypp - z0[p]
-			};
-			residual = residual.max((zin.max(EPS_Z) - z0[p]).abs());
-		}
-
-		let (s_re, s_im, t_re, t_im) = form_s_and_t(&r_re, &r_im, &z0, n, z_ref);
+		let st = form_s_and_t(&r_re, &r_im, &z0, n, z_ref);
+		let residual = residual_real_port(&st.ydiag_re, &z0);
 		Self {
 			n,
 			z_ref,
@@ -263,10 +251,10 @@ impl MatchedS {
 			z0_im: vec![0.0f64; n],
 			r_re,
 			r_im,
-			s_re,
-			s_im,
-			t_re,
-			t_im,
+			s_re: st.s_re,
+			s_im: st.s_im,
+			t_re: st.t_re,
+			t_im: st.t_im,
 			iterations,
 			residual,
 		}
@@ -309,16 +297,8 @@ impl MatchedS {
 			}
 		}
 
-		fill_z_plus_d(&r_re, &r_im, &z0, &z0_im, n, &mut work_re, &mut work_im);
-		let (ydiag_re, ydiag_im) = inverse_diag_cplx(&mut work_re, &mut work_im, n);
-		let mut residual = 0.0f64;
-		for p in 0..n {
-			let (zin_re, _zin_im) = zin_from_ypp(ydiag_re[p], ydiag_im[p], z0[p], 0.0);
-			residual = residual.max((zin_re.max(EPS_Z) - z0[p]).abs());
-		}
-
-		let (s_re, s_im, t_re, t_im) =
-			form_s_and_t_kurokawa(&r_re, &r_im, &z0, &z0_im, n, z_ref);
+		let st = form_s_and_t_kurokawa(&r_re, &r_im, &z0, &z0_im, n, z_ref);
+		let residual = residual_real_port_cplx(&st.ydiag_re, &st.ydiag_im, &z0);
 		Self {
 			n,
 			z_ref,
@@ -326,10 +306,10 @@ impl MatchedS {
 			z0_im,
 			r_re,
 			r_im,
-			s_re,
-			s_im,
-			t_re,
-			t_im,
+			s_re: st.s_re,
+			s_im: st.s_im,
+			t_re: st.t_re,
+			t_im: st.t_im,
 			iterations,
 			residual,
 		}
@@ -344,36 +324,19 @@ impl MatchedS {
 		zc_re: f64,
 		has_x: bool,
 	) -> Self {
-		let nn = n * n;
 		let zc_re = zc_re.max(EPS_Z);
 		let z0 = vec![zc_re; n];
 		let z0_im = vec![0.0f64; n];
 
-		let mut residual = 0.0f64;
-		let (s_re, s_im, t_re, t_im) = if has_x {
-			let mut work_re = vec![0.0f64; nn];
-			let mut work_im = vec![0.0f64; nn];
-			fill_z_plus_d(&r_re, &r_im, &z0, &z0_im, n, &mut work_re, &mut work_im);
-			let (ydiag_re, ydiag_im) = inverse_diag_cplx(&mut work_re, &mut work_im, n);
-			for p in 0..n {
-				let (zin_re, zin_im) = zin_from_ypp(ydiag_re[p], ydiag_im[p], z0[p], 0.0);
-				residual = residual.max((zin_re - zc_re).hypot(zin_im));
-			}
+		let st = if has_x {
 			form_s_and_t_kurokawa(&r_re, &r_im, &z0, &z0_im, n, z_ref)
 		} else {
-			let mut work = vec![0.0f64; nn];
-			fill_rre_plus_d(&r_re, &z0, n, &mut work);
-			let ydiag = inverse_diag_spd(&mut work, n);
-			for p in 0..n {
-				let ypp = ydiag[p];
-				let zin = if ypp.abs() < 1e-30 {
-					f64::INFINITY
-				} else {
-					1.0 / ypp - z0[p]
-				};
-				residual = residual.max((zin - zc_re).abs());
-			}
 			form_s_and_t(&r_re, &r_im, &z0, n, z_ref)
+		};
+		let residual = if has_x {
+			residual_common_cplx(&st.ydiag_re, &st.ydiag_im, &z0, zc_re)
+		} else {
+			residual_common_real(&st.ydiag_re, zc_re)
 		};
 
 		Self {
@@ -383,10 +346,10 @@ impl MatchedS {
 			z0_im,
 			r_re,
 			r_im,
-			s_re,
-			s_im,
-			t_re,
-			t_im,
+			s_re: st.s_re,
+			s_im: st.s_im,
+			t_re: st.t_re,
+			t_im: st.t_im,
 			iterations: 0,
 			residual,
 		}
@@ -541,6 +504,65 @@ fn add_propagation_reactance(
 		}
 	}
 	wrote
+}
+
+struct StResult {
+	s_re: Vec<f64>,
+	s_im: Vec<f64>,
+	t_re: Vec<f64>,
+	t_im: Vec<f64>,
+	ydiag_re: Vec<f64>,
+	ydiag_im: Vec<f64>,
+}
+
+fn zin_from_ypp_real(ypp: f64, z0: f64) -> f64 {
+	if ypp.abs() < 1e-30 {
+		f64::INFINITY
+	} else {
+		1.0 / ypp - z0
+	}
+}
+
+/// Per-port real match residual: \(\max_p\lvert \operatorname{Re}(Z_\mathrm{in})-z_{0,p}\rvert\).
+fn residual_real_port(ydiag: &[f64], z0: &[f64]) -> f64 {
+	let n = z0.len();
+	let mut residual = 0.0f64;
+	for p in 0..n {
+		let zin = zin_from_ypp_real(ydiag[p], z0[p]);
+		residual = residual.max((zin.max(EPS_Z) - z0[p]).abs());
+	}
+	residual
+}
+
+/// Per-port real match residual from complex \(Y_{pp}\).
+fn residual_real_port_cplx(ydiag_re: &[f64], ydiag_im: &[f64], z0: &[f64]) -> f64 {
+	let n = z0.len();
+	let mut residual = 0.0f64;
+	for p in 0..n {
+		let (zin_re, _zin_im) = zin_from_ypp(ydiag_re[p], ydiag_im[p], z0[p], 0.0);
+		residual = residual.max((zin_re.max(EPS_Z) - z0[p]).abs());
+	}
+	residual
+}
+
+/// Common \(z_c\) residual for real \(Z\): \(\max_p\lvert Z_\mathrm{in}-z_c\rvert\).
+fn residual_common_real(ydiag: &[f64], zc: f64) -> f64 {
+	let mut residual = 0.0f64;
+	for ypp in ydiag {
+		residual = residual.max((zin_from_ypp_real(*ypp, zc) - zc).abs());
+	}
+	residual
+}
+
+/// Common \(z_c\) residual for complex \(Z\): \(\max_p\lvert Z_\mathrm{in}-z_c\rvert\).
+fn residual_common_cplx(ydiag_re: &[f64], ydiag_im: &[f64], z0: &[f64], zc: f64) -> f64 {
+	let n = z0.len();
+	let mut residual = 0.0f64;
+	for p in 0..n {
+		let (zin_re, zin_im) = zin_from_ypp(ydiag_re[p], ydiag_im[p], z0[p], 0.0);
+		residual = residual.max((zin_re - zc).hypot(zin_im));
+	}
+	residual
 }
 
 fn zin_from_ypp(ypp_re: f64, ypp_im: f64, z0_re: f64, z0_im: f64) -> (f64, f64) {
@@ -801,7 +823,7 @@ fn form_s_and_t(
 	z0: &[f64],
 	n: usize,
 	z_ref: f64,
-) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
+) -> StResult {
 	let nn = n * n;
 	let mut sqrtz = vec![0.0f64; n];
 	for p in 0..n {
@@ -818,6 +840,7 @@ fn form_s_and_t(
 
 	let mut x_re = vec![0.0f64; nn];
 	let mut x_im = vec![0.0f64; nn];
+	let mut ydiag_re = vec![0.0f64; n];
 	let mut br = vec![0.0f64; n];
 	let mut bi = vec![0.0f64; n];
 	for j in 0..n {
@@ -825,6 +848,7 @@ fn form_s_and_t(
 		bi.fill(0.0);
 		br[j] = sqrtz[j];
 		chol_solve_herm(&l_re, &l_im, n, &mut br, &mut bi);
+		ydiag_re[j] = br[j] / sqrtz[j];
 		for i in 0..n {
 			x_re[i * n + j] = br[i];
 			x_im[i * n + j] = bi[i];
@@ -864,7 +888,14 @@ fn form_s_and_t(
 			s_im[i * n + j] = im * inv_sqrt;
 		}
 	}
-	(s_re, s_im, t_re, t_im)
+	StResult {
+		s_re,
+		s_im,
+		t_re,
+		t_im,
+		ydiag_re,
+		ydiag_im: vec![0.0f64; n],
+	}
 }
 
 /// Kurokawa: \(S = G^{-1}(Z-D^*)(Z+D)^{-1}G\), \(T = 2\sqrt{Z_\mathrm{ref}}(Z+D)^{-1}G\),
@@ -876,7 +907,7 @@ fn form_s_and_t_kurokawa(
 	z0_im: &[f64],
 	n: usize,
 	z_ref: f64,
-) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
+) -> StResult {
 	let nn = n * n;
 	let mut g = vec![0.0f64; n];
 	for p in 0..n {
@@ -894,6 +925,8 @@ fn form_s_and_t_kurokawa(
 
 	let mut w_re = vec![0.0f64; nn];
 	let mut w_im = vec![0.0f64; nn];
+	let mut ydiag_re = vec![0.0f64; n];
+	let mut ydiag_im = vec![0.0f64; n];
 	let mut br = vec![0.0f64; n];
 	let mut bi = vec![0.0f64; n];
 	for j in 0..n {
@@ -901,6 +934,8 @@ fn form_s_and_t_kurokawa(
 		bi.fill(0.0);
 		br[j] = g[j];
 		lu_solve_cplx(&lu_re, &lu_im, n, &piv, &mut br, &mut bi);
+		ydiag_re[j] = br[j] / g[j];
+		ydiag_im[j] = bi[j] / g[j];
 		for i in 0..n {
 			w_re[i * n + j] = br[i];
 			w_im[i * n + j] = bi[i];
@@ -942,7 +977,14 @@ fn form_s_and_t_kurokawa(
 			s_im[i * n + j] = im * inv_g;
 		}
 	}
-	(s_re, s_im, t_re, t_im)
+	StResult {
+		s_re,
+		s_im,
+		t_re,
+		t_im,
+		ydiag_re,
+		ydiag_im,
+	}
 }
 
 #[cfg(test)]
