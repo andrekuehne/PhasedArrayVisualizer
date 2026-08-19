@@ -1,5 +1,5 @@
 /**
- * Matched S-matrix from the J0 radiated-power Gram (§6–8).
+ * Matched S-matrix from the J0 radiated-power Gram (§6–8), including optional \(jX(\rho)\).
  *
  * Run from the repo root:
  *   node --test tests/matched-s.test.js
@@ -99,7 +99,7 @@ describe('matched S from J0 Prad', () => {
 				const k = kernels[kind];
 				k.set_quadrature(8, 2);
 				k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
-				k.form_matched_s(Z_REF);
+				k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0);
 				const z0 = k.take_z0();
 				const sRe = k.take_s_re();
 				const sIm = k.take_s_im();
@@ -124,7 +124,7 @@ describe('matched S from J0 Prad', () => {
 		const n = x.length;
 		k.set_quadrature(32, 2);
 		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF);
+		k.form_matched_s(Z_REF, x, y, 0, 0);
 		const z0 = k.take_z0();
 		const sRe = k.take_s_re();
 		const sIm = k.take_s_im();
@@ -189,7 +189,7 @@ describe('matched S from J0 Prad', () => {
 		const k = kernels.simd;
 		k.set_quadrature(8, 2);
 		k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF);
+		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0);
 		const tRe = k.take_t_re();
 		const tIm = k.take_t_im();
 		close(tRe[0], 1, 1e-6, 'T11');
@@ -206,7 +206,7 @@ describe('matched S from J0 Prad', () => {
 		const n = x.length;
 		k.set_quadrature(32, 2);
 		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF);
+		k.form_matched_s(Z_REF, x, y, 0, 0);
 		const tRe = k.take_t_re();
 		const tIm = k.take_t_im();
 		assert.equal(tRe.length, n * n);
@@ -270,7 +270,7 @@ describe('matched S from J0 Prad', () => {
 		const nn = x.length;
 		k.set_quadrature(32, 2);
 		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF);
+		k.form_matched_s(Z_REF, x, y, 0, 0);
 		const tRe = k.take_t_re();
 		const tIm = k.take_t_im();
 		const theta = 30;
@@ -302,5 +302,30 @@ describe('matched S from J0 Prad', () => {
 		let maxEmbGeo = 0;
 		for (let i = 0; i < nn; i++) maxEmbGeo = Math.max(maxEmbGeo, Math.abs(emb[i] - geo[i]));
 		assert.ok(maxEmbGeo > 1e-4, `aligned embedded still differs from geometric ${maxEmbGeo}`);
+	});
+
+	test('three irregular points with Xnn: complex S, tiny Sii', () => {
+		const k = kernels.simd;
+		const x = new Float32Array([0, 0.5, 1.0]);
+		const y = new Float32Array([0, 0.25, -0.25]);
+		const n = x.length;
+		k.set_quadrature(24, 2);
+		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s(Z_REF, x, y, 10, 2);
+		const sRe = k.take_s_re();
+		const sIm = k.take_s_im();
+		const z0Im = k.take_z0_im();
+		assert.equal(sRe.length, n * n);
+		assert.ok(k.match_residual() < TAU, `residual ${k.match_residual()}`);
+		for (let i = 0; i < n; i++){
+			const sii = mag(sRe[i * n + i], sIm[i * n + i]);
+			assert.ok(sii < 2e-3, `|S${i}${i}|=${sii}`);
+		}
+		let maxIm = 0;
+		for (let i = 0; i < n * n; i++) maxIm = Math.max(maxIm, Math.abs(sIm[i]));
+		assert.ok(maxIm > 1e-6, `S should be complex, max|Im|=${maxIm}`);
+		let maxZim = 0;
+		for (let i = 0; i < z0Im.length; i++) maxZim = Math.max(maxZim, Math.abs(z0Im[i]));
+		assert.ok(maxZim > 1e-6, `z0 should be complex, max|Im|=${maxZim}`);
 	});
 });

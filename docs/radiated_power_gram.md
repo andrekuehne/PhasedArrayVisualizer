@@ -1,6 +1,6 @@
 # Radiated-power Gram (WASM status)
 
-Handoff for [approximate_matched_basis.md](approximate_matched_basis.md). **§5–9 (through \(T\)) are implemented**: isolated fields → Hermitian \(P_H\) (product kernel and \(J_0\)), \(R\), simultaneous real \(z_0\) match, power-wave \(S\) and \(T\). The visualizer has Isolated/Matched coupling and Geometric/Conjugate steer. \(F^\mathrm{emb}\) is not formed on a quadrature grid (the GUI uses \(w=Ta\)).
+Handoff for [approximate_matched_basis.md](approximate_matched_basis.md). **§5–9 (through \(T\)) are implemented**: isolated fields → Hermitian \(P_H\) (product kernel and \(J_0\)), \(R\), optional \(jX(\rho)\), simultaneous match (real \(z_0\), or complex conjugate when \(X_{nn}\neq 0\)), power-wave \(S\) and \(T\). The visualizer has Isolated/Matched coupling and Geometric/Conjugate steer. \(F^\mathrm{emb}\) is not formed on a quadrature grid (the GUI uses \(w=Ta\)).
 
 Intent: keep the **φ-dependent** product quadrature as the general kernel (needed later for rotated / polarized patterns). Do not auto-switch `compute()` or `runPradJob` to J0. Use `compute_j0` only for planar axisymmetric \(D(\mu)\).
 
@@ -62,7 +62,7 @@ where \(D_\lambda\) is the array electrical diameter in wavelengths.
 | [wasm/src/quadrature.rs](../wasm/src/quadrature.rs) | Gauss–Legendre + `HemisphereQuad` (1-D μ kept for J0) |
 | [wasm/src/bessel.rs](../wasm/src/bessel.rs) | f32 \(J_0\) (fdlibm `j0f`) |
 | [wasm/src/prad.rs](../wasm/src/prad.rs) | Isolated \(A\), blocked Hermitian Gram, `P0`, J0 unique-ρ Gram |
-| [wasm/src/match_s.rs](../wasm/src/match_s.rs) | f64 \(R\), real \(z_0\) match, power-wave \(S\) and \(T\) (custom Cholesky) |
+| [wasm/src/match_s.rs](../wasm/src/match_s.rs) | f64 \(Z=R+jX\), real or complex \(z_0\) match, Kurokawa \(S\) and \(T\) |
 | [wasm/src/lib.rs](../wasm/src/lib.rs) | `RadiatedPowerKernel` wasm-bindgen |
 | [js/wasm/farfield-worker.js](../js/wasm/farfield-worker.js) | Same worker: far-field tiles **and** `run_prad` panels. Browser Dedicated Worker or Node `worker_threads` |
 | [js/wasm/farfield-pool.js](../js/wasm/farfield-pool.js) | `runPradJob`, `mergeGrams`, `pradWorkerCount`, `stopFarfieldPool`; Node can pass `{Worker, wasmPath, workers}` |
@@ -88,10 +88,10 @@ form_gram()
 compute(...)                    # fill_isolated + form_gram
 compute_j0(...)                 # axisymmetric planar fast path (Gauss-μ only)
 take_re() / take_im()           # row-major N×N f32 Gram
-form_matched_s(z_ref)           # R, z0 match, S on the current Gram (z_ref≤0 → 50 Ω)
-take_z0()                       # length-N f64
+form_matched_s(z_ref, x, y, x_nn, alpha)  # R, optional jX(ρ), z0 match, S (z_ref≤0 → 50 Ω)
+take_z0() / take_z0_im()        # length-N f64; imag is 0 when X_nn=0
 take_s_re() / take_s_im()       # row-major N×N f64
-take_t_re() / take_t_im()       # row-major N×N f64, \(T=2\sqrt{Z_\mathrm{ref}}(R+D)^{-1}D^{1/2}\)
+take_t_re() / take_t_im()       # row-major N×N f64, Kurokawa \(T\)
 match_iterations() / match_residual()
 n_samples()                     # full quadrature M = n_mu*n_phi
 n_elements()
@@ -130,21 +130,24 @@ Workers stay on the product / sample-panel path. Do not worker-split J0 unless �
 
 ## Matched \(S\) (implemented, §6–8)
 
-Runs on whatever Gram is already in the kernel (`compute_j0` or `compute` / panel merge). Does **not** fill \(A\).
+Runs on whatever Gram is already in the kernel (`compute_j0` or `compute` / panel merge). Does **not** fill \(A\). Positions `x`,`y` are used only to build optional \(X(\rho)\).
 
 \[
 R = 2\,Z_\mathrm{ref}\,P_H,\qquad
-z_0 \text{ from } \Re(R),\qquad
-S = D^{-1/2}(R-D)\,\mathrm{solve}(R+D,\,D^{1/2}).
+Z = R + jX(\rho),\qquad
+X_{pq}=X_{nn}(d_\min/\rho_{pq})^\alpha.
 \]
 
-Constants: \(Z_\mathrm{ref}=50\,\Omega\), \(\varepsilon_z=10^{-9}\,\Omega\), \(K_\mathrm{max}=200\), \(\tau=10^{-3}\,\Omega\). Match is the method’s fixed point on \(\Re(R)\); \(S\) uses full Hermitian \(R\). Custom f64 Cholesky (real SPD for the match, Hermitian PD for \(R+D\)); a tiny pivot is floored rather than panicking.
+\(X_{nn}=0\), empty `x`/`y`, or length mismatch skips \(X\) (real \(z_0\) path). Constants: \(Z_\mathrm{ref}=50\,\Omega\), \(\varepsilon_z=10^{-9}\,\Omega\), \(K_\mathrm{max}=200\), \(\tau=10^{-3}\,\Omega\).
 
-`form_matched_s(z_ref)` with `z_ref <= 0` or non-finite uses \(50\,\Omega\). After a successful match, \(\mathrm{diag}(S)\approx 0\). For J0 / axisymmetric planar elements \(R\), \(S\), and \(T\) are real.
+- **\(X_{nn}=0\):** match on \(\Re(R)\); \(S=D^{-1/2}(R-D)\,\mathrm{solve}(R+D,\,D^{1/2})\). Real SPD / Hermitian Cholesky.
+- **\(X_{nn}\neq 0\):** conjugate match \(z_0=Z_\mathrm{in}^*\); Kurokawa \(S=G^{-1}(Z-D^*)(Z+D)^{-1}G\) with \(G=\mathrm{diag}\sqrt{\Re(z_0)}\). Complex LU on \(Z+D\). After \(K_\mathrm{max}/4\), under-relax \(\beta=1/2\).
+
+`form_matched_s(z_ref, x, y, x_nn, alpha)` with `z_ref <= 0` or non-finite uses \(50\,\Omega\). After a successful match, \(\mathrm{diag}(S)\approx 0\). For J0 / axisymmetric planar elements and \(X_{nn}=0\), \(R\), \(S\), and \(T\) are real.
 
 One-port check: isolated \(P_H=P_0=1/2\) gives \(R=Z_\mathrm{ref}\), \(z_0=50\), \(S=0\), \(T=1\).
 
-The visualizer uses J0 + `form_matched_s` on geometry / element / `frequency_scale` changes, then \(w=T a\) in `create_farfield_vectors` when Coupling is Matched. Conjugate steer sets \(a\) from \(\arg(T^T F^\mathrm{iso})\) at the commanded \((\theta,\phi)\). Illumination is applied after \(T\). Full \(F^\mathrm{emb}\) on the plot mesh is not built.
+The visualizer uses J0 + `form_matched_s` on geometry / element / `frequency_scale` / \(X_{nn},\alpha\) changes, then \(w=T a\) in `create_farfield_vectors` when Coupling is Matched. Conjugate steer sets \(a\) from \(\arg(T^T F^\mathrm{iso})\) at the commanded \((\theta,\phi)\). Illumination is applied after \(T\). Full \(F^\mathrm{emb}\) on the plot mesh is not built.
 
 ---
 
@@ -177,7 +180,7 @@ node --test tests/prad-bench.test.js
 node --test tests/matched-s.test.js
 ```
 
-Rust covers \(N=1\) power, coincident/far pairs, Hermitian, quadrature convergence, naive Gram, **panel sum = full Gram**, **J0 vs product**, unique-ρ collapse, and **matched \(S\)/\(T\)**: N=1 \(S=0\), \(T=1\), far-pair, residual \(<\tau\), symmetry. JS prints 8×8 \(S_{ii}\) / worst \(|S_{ij}|\), checks \(w=Ta\), and conjugate vs geometric phases.
+Rust covers \(N=1\) power, coincident/far pairs, Hermitian, quadrature convergence, naive Gram, **panel sum = full Gram**, **J0 vs product**, unique-ρ collapse, and **matched \(S\)/\(T\)**: N=1 \(S=0\), \(T=1\), far-pair, residual \(<\tau\), symmetry, pairwise \(jX(\rho)\) (including irregular geometry). JS prints 8×8 \(S_{ii}\) / worst \(|S_{ij}|\), checks \(w=Ta\), conjugate vs geometric phases, and a three-element \(X_{nn}\) case.
 
 ---
 

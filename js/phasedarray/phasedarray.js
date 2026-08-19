@@ -54,6 +54,7 @@ export class PhasedArray{
 		this.sRe = null;
 		this.sIm = null;
 		this.z0 = null;
+		this.z0Im = null;
 		this.reflectionGamma = 0;
 	}
 	set_theta_phi(theta, phi){
@@ -149,8 +150,9 @@ export class PhasedArray{
 			this.vIdealPhaseFactor[i] = aligned[i] - this.vIllumPhaseFactor[i];
 		}
 	}
-	set_matched_basis(z0, sRe, sIm, tRe, tIm){
+	set_matched_basis(z0, sRe, sIm, tRe, tIm, z0Im){
 		this.z0 = z0;
+		this.z0Im = z0Im || null;
 		this.sRe = sRe;
 		this.sIm = sIm;
 		this.tRe = tRe;
@@ -158,6 +160,7 @@ export class PhasedArray{
 	}
 	clear_matched_basis(){
 		this.z0 = null;
+		this.z0Im = null;
 		this.sRe = null;
 		this.sIm = null;
 		this.tRe = null;

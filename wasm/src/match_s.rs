@@ -1,7 +1,9 @@
-//! Radiative resistance, simultaneous real port match, and power-wave \(S\).
+//! Radiative resistance, simultaneous port match, and power-wave \(S\).
 //!
-//! §6–8 of `docs/approximate_matched_basis.md`. Operates on an already-formed
-//! radiated-power Gram \(P_H\). Internals are f64; the Gram itself stays f32.
+//! §6–8 of `docs/approximate_matched_basis.md`, plus a phenomenological
+//! mutual reactance \(X(\rho)\) and Kurokawa \(S\) at complex \(z_0\).
+//! Operates on an already-formed radiated-power Gram \(P_H\). Internals are
+//! f64; the Gram itself stays f32.
 
 pub const Z_REF: f64 = 50.0;
 pub const EPS_Z: f64 = 1e-9;
@@ -9,14 +11,16 @@ pub const K_MAX: u32 = 200;
 pub const TAU: f64 = 1e-3;
 
 const PIVOT_FLOOR: f64 = 1e-18;
+const MATCH_BETA: f64 = 0.5;
 
-/// Result of \(P_H \to R \to z_0 \to S\).
+/// Result of \(P_H \to Z=R+jX \to z_0 \to S\).
 pub struct MatchedS {
 	#[allow(dead_code)]
 	pub n: usize,
 	#[allow(dead_code)]
 	pub z_ref: f64,
 	pub z0: Vec<f64>,
+	pub z0_im: Vec<f64>,
 	pub r_re: Vec<f64>,
 	pub r_im: Vec<f64>,
 	pub s_re: Vec<f64>,
@@ -33,6 +37,7 @@ impl MatchedS {
 			n: 0,
 			z_ref: Z_REF,
 			z0: Vec::new(),
+			z0_im: Vec::new(),
 			r_re: Vec::new(),
 			r_im: Vec::new(),
 			s_re: Vec::new(),
@@ -45,7 +50,23 @@ impl MatchedS {
 	}
 
 	/// \(R = 2 Z_\mathrm{ref} P_H\), match on \(\Re(R)\), \(S\) from Hermitian \(R\).
+	#[allow(dead_code)]
 	pub fn from_gram(p_re: &[f32], p_im: &[f32], n: usize, z_ref: f64) -> Self {
+		Self::from_gram_coupled(p_re, p_im, n, z_ref, &[], &[], 0.0, 0.0)
+	}
+
+	/// Same as [`from_gram`], then \(Z = R + jX(\rho)\) and a complex conjugate match
+	/// when \(X_{nn}\neq 0\) and positions are valid.
+	pub fn from_gram_coupled(
+		p_re: &[f32],
+		p_im: &[f32],
+		n: usize,
+		z_ref: f64,
+		x: &[f32],
+		y: &[f32],
+		x_nn: f64,
+		alpha: f64,
+	) -> Self {
 		let z_ref = if z_ref.is_finite() && z_ref > 0.0 {
 			z_ref
 		} else {
@@ -68,6 +89,17 @@ impl MatchedS {
 			r_im[p * n + p] = 0.0;
 		}
 
+		let coupled = add_mutual_reactance(&mut r_im, x, y, n, x_nn, alpha);
+		if coupled {
+			Self::from_z_complex(r_re, r_im, n, z_ref)
+		} else {
+			Self::from_z_real(r_re, r_im, n, z_ref)
+		}
+	}
+
+	/// Real \(z_0\) on \(\Re(Z)\); Hermitian Cholesky for \(S\) and \(T\).
+	fn from_z_real(r_re: Vec<f64>, r_im: Vec<f64>, n: usize, z_ref: f64) -> Self {
+		let nn = n * n;
 		let mut z0 = vec![0.0f64; n];
 		for p in 0..n {
 			z0[p] = r_re[p * n + p].max(EPS_Z);
@@ -117,6 +149,87 @@ impl MatchedS {
 			n,
 			z_ref,
 			z0,
+			z0_im: vec![0.0f64; n],
+			r_re,
+			r_im,
+			s_re,
+			s_im,
+			t_re,
+			t_im,
+			iterations,
+			residual,
+		}
+	}
+
+	/// Conjugate match \(z_0 = Z_\mathrm{in}^*\) and Kurokawa \(S\), \(T\).
+	fn from_z_complex(r_re: Vec<f64>, r_im: Vec<f64>, n: usize, z_ref: f64) -> Self {
+		let nn = n * n;
+		let mut z0_re = vec![0.0f64; n];
+		let mut z0_im = vec![0.0f64; n];
+		for p in 0..n {
+			z0_re[p] = r_re[p * n + p].max(EPS_Z);
+		}
+
+		let mut iterations = 0u32;
+		let mut work_re = vec![0.0f64; nn];
+		let mut work_im = vec![0.0f64; nn];
+		let mut beta = 1.0f64;
+		for k in 0..K_MAX {
+			iterations += 1;
+			if k == K_MAX / 4 {
+				beta = MATCH_BETA;
+			}
+			fill_z_plus_d(&r_re, &r_im, &z0_re, &z0_im, n, &mut work_re, &mut work_im);
+			let (ydiag_re, ydiag_im) = inverse_diag_cplx(&mut work_re, &mut work_im, n);
+			let mut z_next_re = vec![0.0f64; n];
+			let mut z_next_im = vec![0.0f64; n];
+			let mut delta = 0.0f64;
+			for p in 0..n {
+				let (zin_re, zin_im) = zin_from_ypp(
+					ydiag_re[p],
+					ydiag_im[p],
+					z0_re[p],
+					z0_im[p],
+				);
+				// \(z^\star = Z_\mathrm{in}^*\) with \(\Re(z^\star)\ge\varepsilon_z\).
+				let star_re = zin_re.max(EPS_Z);
+				let star_im = -zin_im;
+				z_next_re[p] = (1.0 - beta) * z0_re[p] + beta * star_re;
+				z_next_im[p] = (1.0 - beta) * z0_im[p] + beta * star_im;
+				if z_next_re[p] < EPS_Z {
+					z_next_re[p] = EPS_Z;
+				}
+				delta = delta.max((star_re - z0_re[p]).hypot(star_im - z0_im[p]));
+			}
+			z0_re = z_next_re;
+			z0_im = z_next_im;
+			if delta < TAU {
+				break;
+			}
+		}
+
+		fill_z_plus_d(&r_re, &r_im, &z0_re, &z0_im, n, &mut work_re, &mut work_im);
+		let (ydiag_re, ydiag_im) = inverse_diag_cplx(&mut work_re, &mut work_im, n);
+		let mut residual = 0.0f64;
+		for p in 0..n {
+			let (zin_re, zin_im) = zin_from_ypp(
+				ydiag_re[p],
+				ydiag_im[p],
+				z0_re[p],
+				z0_im[p],
+			);
+			let star_re = zin_re.max(EPS_Z);
+			let star_im = -zin_im;
+			residual = residual.max((star_re - z0_re[p]).hypot(star_im - z0_im[p]));
+		}
+
+		let (s_re, s_im, t_re, t_im) =
+			form_s_and_t_kurokawa(&r_re, &r_im, &z0_re, &z0_im, n, z_ref);
+		Self {
+			n,
+			z_ref,
+			z0: z0_re,
+			z0_im,
 			r_re,
 			r_im,
 			s_re,
@@ -129,11 +242,108 @@ impl MatchedS {
 	}
 }
 
+/// \(X_{pq}=X_{nn}(d_\min/\rho_{pq})^\alpha\). Returns true if any off-diagonal was written.
+fn add_mutual_reactance(
+	r_im: &mut [f64],
+	x: &[f32],
+	y: &[f32],
+	n: usize,
+	x_nn: f64,
+	alpha: f64,
+) -> bool {
+	if n < 2 || x.len() != n || y.len() != n {
+		return false;
+	}
+	if !x_nn.is_finite() || x_nn == 0.0 {
+		return false;
+	}
+	let alpha = if alpha.is_finite() && alpha >= 0.0 {
+		alpha
+	} else {
+		return false;
+	};
+
+	let mut d_min = f64::INFINITY;
+	for p in 0..n {
+		for q in 0..p {
+			let dx = x[p] as f64 - x[q] as f64;
+			let dy = y[p] as f64 - y[q] as f64;
+			let rho = dx.hypot(dy);
+			if rho > 0.0 && rho < d_min {
+				d_min = rho;
+			}
+		}
+	}
+	if !d_min.is_finite() || d_min <= 0.0 {
+		return false;
+	}
+
+	let mut wrote = false;
+	for p in 0..n {
+		for q in 0..p {
+			let dx = x[p] as f64 - x[q] as f64;
+			let dy = y[p] as f64 - y[q] as f64;
+			let rho = dx.hypot(dy);
+			let xpq = if rho > 0.0 {
+				x_nn * (d_min / rho).powf(alpha)
+			} else {
+				0.0
+			};
+			if xpq == 0.0 {
+				continue;
+			}
+			r_im[p * n + q] += xpq;
+			r_im[q * n + p] += xpq;
+			wrote = true;
+		}
+	}
+	wrote
+}
+
+fn zin_from_ypp(ypp_re: f64, ypp_im: f64, z0_re: f64, z0_im: f64) -> (f64, f64) {
+	if ypp_re.hypot(ypp_im) < 1e-30 {
+		return (f64::INFINITY, 0.0);
+	}
+	let (inv_re, inv_im) = cdiv(1.0, 0.0, ypp_re, ypp_im);
+	(inv_re - z0_re, inv_im - z0_im)
+}
+
 fn fill_rre_plus_d(r_re: &[f64], z0: &[f64], n: usize, out: &mut [f64]) {
 	out.copy_from_slice(r_re);
 	for p in 0..n {
 		out[p * n + p] += z0[p];
 	}
+}
+
+fn fill_z_plus_d(
+	z_re: &[f64],
+	z_im: &[f64],
+	z0_re: &[f64],
+	z0_im: &[f64],
+	n: usize,
+	out_re: &mut [f64],
+	out_im: &mut [f64],
+) {
+	out_re.copy_from_slice(z_re);
+	out_im.copy_from_slice(z_im);
+	for p in 0..n {
+		out_re[p * n + p] += z0_re[p];
+		out_im[p * n + p] += z0_im[p];
+	}
+}
+
+#[inline]
+fn cmul(ar: f64, ai: f64, br: f64, bi: f64) -> (f64, f64) {
+	(ar * br - ai * bi, ar * bi + ai * br)
+}
+
+#[inline]
+fn cdiv(ar: f64, ai: f64, br: f64, bi: f64) -> (f64, f64) {
+	let d = br * br + bi * bi;
+	if d < 1e-30 {
+		return (0.0, 0.0);
+	}
+	((ar * br + ai * bi) / d, (ai * br - ar * bi) / d)
 }
 
 /// In-place real Cholesky: lower triangle of `a` becomes \(L\) with \(A = L L^T\).
@@ -238,6 +448,108 @@ fn chol_solve_herm(l_re: &[f64], l_im: &[f64], n: usize, b_re: &mut [f64], b_im:
 	}
 }
 
+/// Complex LU with partial pivoting. `re`/`im` become \(L+U\) (unit \(L\) diagonal).
+/// `piv[k]` is the row swapped with \(k\) at step \(k\).
+fn lu_factor_cplx(re: &mut [f64], im: &mut [f64], n: usize, piv: &mut [usize]) {
+	for i in 0..n {
+		piv[i] = i;
+	}
+	for k in 0..n {
+		let mut p = k;
+		let mut max_abs = re[k * n + k].hypot(im[k * n + k]);
+		for i in (k + 1)..n {
+			let a = re[i * n + k].hypot(im[i * n + k]);
+			if a > max_abs {
+				max_abs = a;
+				p = i;
+			}
+		}
+		piv[k] = p;
+		if p != k {
+			for j in 0..n {
+				re.swap(k * n + j, p * n + j);
+				im.swap(k * n + j, p * n + j);
+			}
+		}
+		let d_re = re[k * n + k];
+		let d_im = im[k * n + k];
+		if d_re.hypot(d_im) < PIVOT_FLOOR {
+			re[k * n + k] = PIVOT_FLOOR;
+			im[k * n + k] = 0.0;
+		}
+		let pk_re = re[k * n + k];
+		let pk_im = im[k * n + k];
+		for i in (k + 1)..n {
+			let (mr, mi) = cdiv(re[i * n + k], im[i * n + k], pk_re, pk_im);
+			re[i * n + k] = mr;
+			im[i * n + k] = mi;
+			for j in (k + 1)..n {
+				let (pr, pi) = cmul(mr, mi, re[k * n + j], im[k * n + j]);
+				re[i * n + j] -= pr;
+				im[i * n + j] -= pi;
+			}
+		}
+	}
+}
+
+fn lu_solve_cplx(
+	lu_re: &[f64],
+	lu_im: &[f64],
+	n: usize,
+	piv: &[usize],
+	b_re: &mut [f64],
+	b_im: &mut [f64],
+) {
+	for k in 0..n {
+		let p = piv[k];
+		if p != k {
+			b_re.swap(k, p);
+			b_im.swap(k, p);
+		}
+	}
+	for i in 0..n {
+		let mut sr = b_re[i];
+		let mut si = b_im[i];
+		for j in 0..i {
+			let (pr, pi) = cmul(lu_re[i * n + j], lu_im[i * n + j], b_re[j], b_im[j]);
+			sr -= pr;
+			si -= pi;
+		}
+		b_re[i] = sr;
+		b_im[i] = si;
+	}
+	for i in (0..n).rev() {
+		let mut sr = b_re[i];
+		let mut si = b_im[i];
+		for j in (i + 1)..n {
+			let (pr, pi) = cmul(lu_re[i * n + j], lu_im[i * n + j], b_re[j], b_im[j]);
+			sr -= pr;
+			si -= pi;
+		}
+		let (xr, xi) = cdiv(sr, si, lu_re[i * n + i], lu_im[i * n + i]);
+		b_re[i] = xr;
+		b_im[i] = xi;
+	}
+}
+
+fn inverse_diag_cplx(re: &mut [f64], im: &mut [f64], n: usize) -> (Vec<f64>, Vec<f64>) {
+	let mut piv = vec![0usize; n];
+	lu_factor_cplx(re, im, n, &mut piv);
+	let mut y_re = vec![0.0f64; n];
+	let mut y_im = vec![0.0f64; n];
+	let mut br = vec![0.0f64; n];
+	let mut bi = vec![0.0f64; n];
+	for j in 0..n {
+		br.fill(0.0);
+		bi.fill(0.0);
+		br[j] = 1.0;
+		lu_solve_cplx(re, im, n, &piv, &mut br, &mut bi);
+		y_re[j] = br[j];
+		y_im[j] = bi[j];
+	}
+	(y_re, y_im)
+}
+
 /// \(S = D^{-1/2}(R-D)\,\mathrm{solve}(R+D, D^{1/2})\),
 /// \(T = 2\sqrt{Z_\mathrm{ref}}\,\mathrm{solve}(R+D, D^{1/2})\).
 fn form_s_and_t(
@@ -312,6 +624,84 @@ fn form_s_and_t(
 	(s_re, s_im, t_re, t_im)
 }
 
+/// Kurokawa: \(S = G^{-1}(Z-D^*)(Z+D)^{-1}G\), \(T = 2\sqrt{Z_\mathrm{ref}}(Z+D)^{-1}G\),
+/// \(G=\mathrm{diag}\sqrt{\Re(z_0)}\).
+fn form_s_and_t_kurokawa(
+	z_re: &[f64],
+	z_im: &[f64],
+	z0_re: &[f64],
+	z0_im: &[f64],
+	n: usize,
+	z_ref: f64,
+) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
+	let nn = n * n;
+	let mut g = vec![0.0f64; n];
+	for p in 0..n {
+		g[p] = z0_re[p].max(EPS_Z).sqrt();
+	}
+
+	let mut lu_re = z_re.to_vec();
+	let mut lu_im = z_im.to_vec();
+	for p in 0..n {
+		lu_re[p * n + p] += z0_re[p];
+		lu_im[p * n + p] += z0_im[p];
+	}
+	let mut piv = vec![0usize; n];
+	lu_factor_cplx(&mut lu_re, &mut lu_im, n, &mut piv);
+
+	let mut w_re = vec![0.0f64; nn];
+	let mut w_im = vec![0.0f64; nn];
+	let mut br = vec![0.0f64; n];
+	let mut bi = vec![0.0f64; n];
+	for j in 0..n {
+		br.fill(0.0);
+		bi.fill(0.0);
+		br[j] = g[j];
+		lu_solve_cplx(&lu_re, &lu_im, n, &piv, &mut br, &mut bi);
+		for i in 0..n {
+			w_re[i * n + j] = br[i];
+			w_im[i * n + j] = bi[i];
+		}
+	}
+
+	let t_scale = 2.0 * z_ref.max(EPS_Z).sqrt();
+	let mut t_re = vec![0.0f64; nn];
+	let mut t_im = vec![0.0f64; nn];
+	for i in 0..nn {
+		t_re[i] = t_scale * w_re[i];
+		t_im[i] = t_scale * w_im[i];
+	}
+
+	// \(Z - D^*\): diagonal \(\,Z_{pp}-\overline{z_{0,p}}\).
+	let mut zmd_re = z_re.to_vec();
+	let mut zmd_im = z_im.to_vec();
+	for p in 0..n {
+		zmd_re[p * n + p] -= z0_re[p];
+		zmd_im[p * n + p] += z0_im[p];
+	}
+
+	let mut s_re = vec![0.0f64; nn];
+	let mut s_im = vec![0.0f64; nn];
+	for i in 0..n {
+		let inv_g = 1.0 / g[i];
+		for j in 0..n {
+			let mut re = 0.0;
+			let mut im = 0.0;
+			for k in 0..n {
+				let ar = zmd_re[i * n + k];
+				let ai = zmd_im[i * n + k];
+				let wr = w_re[k * n + j];
+				let wi = w_im[k * n + j];
+				re += ar * wr - ai * wi;
+				im += ar * wi + ai * wr;
+			}
+			s_re[i * n + j] = re * inv_g;
+			s_im[i * n + j] = im * inv_g;
+		}
+	}
+	(s_re, s_im, t_re, t_im)
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -352,6 +742,41 @@ mod tests {
 	}
 
 	#[test]
+	fn lu_solves_complex() {
+		let n = 2;
+		#[rustfmt::skip]
+		let a_re = [
+			1.0, 2.0,
+			3.0, 4.0,
+		];
+		#[rustfmt::skip]
+		let a_im = [
+			1.0, 0.0,
+			0.0, -1.0,
+		];
+		let mut lu_re = a_re.to_vec();
+		let mut lu_im = a_im.to_vec();
+		let mut piv = vec![0usize; n];
+		lu_factor_cplx(&mut lu_re, &mut lu_im, n, &mut piv);
+		let mut br = vec![1.0, 0.0];
+		let mut bi = vec![0.0, 0.0];
+		lu_solve_cplx(&lu_re, &lu_im, n, &piv, &mut br, &mut bi);
+		let mut ax_re = [0.0; 2];
+		let mut ax_im = [0.0; 2];
+		for i in 0..n {
+			for k in 0..n {
+				let (pr, pi) = cmul(a_re[i * n + k], a_im[i * n + k], br[k], bi[k]);
+				ax_re[i] += pr;
+				ax_im[i] += pi;
+			}
+		}
+		close(ax_re[0], 1.0, 1e-12, "lu Ax re0");
+		close(ax_re[1], 0.0, 1e-12, "lu Ax re1");
+		close(ax_im[0], 0.0, 1e-12, "lu Ax im0");
+		close(ax_im[1], 0.0, 1e-12, "lu Ax im1");
+	}
+
+	#[test]
 	fn n1_gram_gives_zref_and_s0() {
 		let p_re = [0.5f32];
 		let p_im = [0.0f32];
@@ -361,6 +786,7 @@ mod tests {
 		close(m.r_re[0], Z_REF, 1e-12, "R11");
 		close(m.r_im[0], 0.0, 0.0, "R11 im");
 		close(m.z0[0], Z_REF, 1e-9, "z0");
+		close(m.z0_im[0], 0.0, 0.0, "z0 im");
 		close(m.s_re[0], 0.0, 1e-12, "S11 re");
 		close(m.s_im[0], 0.0, 1e-12, "S11 im");
 		close(m.t_re[0], 1.0, 1e-12, "T11");
@@ -370,7 +796,7 @@ mod tests {
 
 	#[test]
 	fn two_port_real_r_matches_and_s_symmetric() {
-		// Isolated P_H so R = [[50, 10], [10, 50]].
+		// Isolated P_H so R = [[50, 12.5], [12.5, 50]].
 		let p_re = [0.5f32, 0.125, 0.125, 0.5];
 		let p_im = [0.0f32; 4];
 		let m = MatchedS::from_gram(&p_re, &p_im, 2, Z_REF);
@@ -459,5 +885,126 @@ mod tests {
 		close(ax[1], 0.0, 1e-12, "herm Ax1");
 		close(bi[0], 0.0, 1e-12, "herm im0");
 		close(bi[1], 0.0, 1e-12, "herm im1");
+	}
+
+	#[test]
+	fn xnn_zero_matches_from_gram() {
+		let p_re = [0.5f32, 0.125, 0.125, 0.5];
+		let p_im = [0.0f32; 4];
+		let a = MatchedS::from_gram(&p_re, &p_im, 2, Z_REF);
+		let b = MatchedS::from_gram_coupled(
+			&p_re,
+			&p_im,
+			2,
+			Z_REF,
+			&[0.0, 0.5],
+			&[0.0, 0.0],
+			0.0,
+			2.0,
+		);
+		close(a.z0[0], b.z0[0], 0.0, "z0");
+		close(a.s_re[1], b.s_re[1], 0.0, "S12");
+		close(b.z0_im[0], 0.0, 0.0, "z0 im");
+		close(b.r_im[1], 0.0, 0.0, "X12");
+	}
+
+	#[test]
+	fn two_port_reactance_is_symmetric_and_matched() {
+		let p_re = [0.5f32, 0.125, 0.125, 0.5];
+		let p_im = [0.0f32; 4];
+		let x_nn = 10.0;
+		let m = MatchedS::from_gram_coupled(
+			&p_re,
+			&p_im,
+			2,
+			Z_REF,
+			&[0.0, 0.5],
+			&[0.0, 0.0],
+			x_nn,
+			2.0,
+		);
+		close(m.r_re[0], 50.0, 1e-12, "R11");
+		close(m.r_im[1], x_nn, 1e-12, "X12");
+		close(m.r_im[2], x_nn, 1e-12, "X21");
+		close(m.r_im[0], 0.0, 0.0, "X11");
+		assert!(m.residual < TAU, "residual {}", m.residual);
+		let s11 = m.s_re[0].hypot(m.s_im[0]);
+		let s22 = m.s_re[3].hypot(m.s_im[3]);
+		assert!(s11 < 2e-3, "|S11|={s11}");
+		assert!(s22 < 2e-3, "|S22|={s22}");
+		assert!(m.z0_im[0].abs() > 1e-6, "z0 imag {}", m.z0_im[0]);
+		close(m.z0_im[0], m.z0_im[1], 1e-9, "equal Im z0");
+	}
+
+	#[test]
+	fn three_irregular_decay_and_alpha_zero() {
+		let n = 3;
+		let mut p_re = vec![0.5f32; n * n];
+		for p in 0..n {
+			p_re[p * n + p] = 0.5;
+		}
+		// Off-diag 0.05 → R_pq = 5 Ω.
+		for p in 0..n {
+			for q in 0..n {
+				if p != q {
+					p_re[p * n + q] = 0.05;
+				}
+			}
+		}
+		let p_im = vec![0.0f32; n * n];
+		let x = [0.0f32, 0.5, 1.0];
+		let y = [0.0f32, 0.25, -0.25];
+		let x_nn = 8.0;
+		let alpha = 2.0;
+		let m = MatchedS::from_gram_coupled(&p_re, &p_im, n, Z_REF, &x, &y, x_nn, alpha);
+		assert!(m.residual < TAU, "residual {}", m.residual);
+
+		fn rho(i: usize, j: usize, x: &[f32], y: &[f32]) -> f64 {
+			let dx = x[i] as f64 - x[j] as f64;
+			let dy = y[i] as f64 - y[j] as f64;
+			dx.hypot(dy)
+		}
+		let r01 = rho(0, 1, &x, &y);
+		let r02 = rho(0, 2, &x, &y);
+		let r12 = rho(1, 2, &x, &y);
+		let d_min = r01.min(r02).min(r12);
+		let expect = |rij: f64| x_nn * (d_min / rij).powf(alpha);
+		close(m.r_im[0 * n + 1], expect(r01), 1e-9, "X01");
+		close(m.r_im[1 * n + 0], expect(r01), 1e-9, "X10");
+		close(m.r_im[0 * n + 2], expect(r02), 1e-9, "X02");
+		close(m.r_im[1 * n + 2], expect(r12), 1e-9, "X12");
+		close(m.r_im[0], 0.0, 0.0, "X00");
+		let mag00 = m.s_re[0].hypot(m.s_im[0]);
+		assert!(mag00 < 2e-3, "|S00|={mag00}");
+		assert!(
+			expect(r01).abs() >= expect(r02).abs() - 1e-12,
+			"closest pair is strongest"
+		);
+
+		let m0 = MatchedS::from_gram_coupled(&p_re, &p_im, n, Z_REF, &x, &y, x_nn, 0.0);
+		close(m0.r_im[1], x_nn, 1e-12, "alpha0 X01");
+		close(m0.r_im[2], x_nn, 1e-12, "alpha0 X02");
+		close(m0.r_im[5], x_nn, 1e-12, "alpha0 X12");
+	}
+
+	#[test]
+	fn coincident_pair_is_finite() {
+		let p_re = [0.5f32, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5];
+		let p_im = [0.0f32; 9];
+		let m = MatchedS::from_gram_coupled(
+			&p_re,
+			&p_im,
+			3,
+			Z_REF,
+			&[0.0, 0.0, 1.0],
+			&[0.0, 0.0, 0.0],
+			12.0,
+			3.0,
+		);
+		assert!(m.r_im.iter().all(|v| v.is_finite()), "X finite");
+		close(m.r_im[1], 0.0, 0.0, "coincident X01");
+		close(m.r_im[2], 12.0, 1e-12, "X02 = Xnn");
+		close(m.r_im[5], 12.0, 1e-12, "X12 = Xnn");
+		assert!(m.residual.is_finite());
 	}
 }

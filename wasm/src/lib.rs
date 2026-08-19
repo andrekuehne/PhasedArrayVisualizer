@@ -144,12 +144,23 @@ impl RadiatedPowerKernel {
 		self.state.p_im.clone()
 	}
 
-	pub fn form_matched_s(&mut self, z_ref: f32) {
-		self.state.form_matched_s(z_ref);
+	pub fn form_matched_s(
+		&mut self,
+		z_ref: f32,
+		x: &[f32],
+		y: &[f32],
+		x_nn: f32,
+		alpha: f32,
+	) {
+		self.state.form_matched_s(z_ref, x, y, x_nn, alpha);
 	}
 
 	pub fn take_z0(&self) -> Vec<f64> {
 		self.state.z0.clone()
+	}
+
+	pub fn take_z0_im(&self) -> Vec<f64> {
+		self.state.z0_im.clone()
 	}
 
 	pub fn take_s_re(&self) -> Vec<f64> {

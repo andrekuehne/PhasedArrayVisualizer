@@ -80,7 +80,7 @@ export const radiatedpowerkernel_compute_j0: (a: number, b: number, c: number, d
 export const radiatedpowerkernel_fill_isolated: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
 export const radiatedpowerkernel_fill_isolated_range: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
 export const radiatedpowerkernel_form_gram: (a: number) => void;
-export const radiatedpowerkernel_form_matched_s: (a: number, b: number) => void;
+export const radiatedpowerkernel_form_matched_s: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
 export const radiatedpowerkernel_match_iterations: (a: number) => number;
 export const radiatedpowerkernel_match_residual: (a: number) => number;
 export const radiatedpowerkernel_n_elements: (a: number) => number;
@@ -94,6 +94,7 @@ export const radiatedpowerkernel_take_s_re: (a: number) => [number, number];
 export const radiatedpowerkernel_take_t_im: (a: number) => [number, number];
 export const radiatedpowerkernel_take_t_re: (a: number) => [number, number];
 export const radiatedpowerkernel_take_z0: (a: number) => [number, number];
+export const radiatedpowerkernel_take_z0_im: (a: number) => [number, number];
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;

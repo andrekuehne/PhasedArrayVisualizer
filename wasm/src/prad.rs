@@ -49,6 +49,7 @@ pub struct PradState {
 	pub p_im: Vec<f32>,
 	pub n_unique_rho: usize,
 	pub z0: Vec<f64>,
+	pub z0_im: Vec<f64>,
 	pub r_re: Vec<f64>,
 	pub r_im: Vec<f64>,
 	pub s_re: Vec<f64>,
@@ -72,6 +73,7 @@ impl PradState {
 			p_im: Vec::new(),
 			n_unique_rho: 0,
 			z0: Vec::new(),
+			z0_im: Vec::new(),
 			r_re: Vec::new(),
 			r_im: Vec::new(),
 			s_re: Vec::new(),
@@ -261,6 +263,7 @@ impl PradState {
 
 	fn clear_matched(&mut self) {
 		self.z0.clear();
+		self.z0_im.clear();
 		self.r_re.clear();
 		self.r_im.clear();
 		self.s_re.clear();
@@ -271,15 +274,32 @@ impl PradState {
 		self.match_residual = 0.0;
 	}
 
-	/// \(R = 2 Z_\mathrm{ref} P_H\), simultaneous real match, power-wave \(S\).
+	/// \(R = 2 Z_\mathrm{ref} P_H\), optional \(jX(\rho)\), match, power-wave \(S\).
 	/// Uses the current Gram; does not fill \(A\).
-	pub fn form_matched_s(&mut self, z_ref: f32) {
+	pub fn form_matched_s(
+		&mut self,
+		z_ref: f32,
+		x: &[f32],
+		y: &[f32],
+		x_nn: f32,
+		alpha: f32,
+	) {
 		if self.n == 0 || self.p_re.len() != self.n * self.n {
 			self.clear_matched();
 			return;
 		}
-		let m = MatchedS::from_gram(&self.p_re, &self.p_im, self.n, z_ref as f64);
+		let m = MatchedS::from_gram_coupled(
+			&self.p_re,
+			&self.p_im,
+			self.n,
+			z_ref as f64,
+			x,
+			y,
+			x_nn as f64,
+			alpha as f64,
+		);
 		self.z0 = m.z0;
+		self.z0_im = m.z0_im;
 		self.r_re = m.r_re;
 		self.r_im = m.r_im;
 		self.s_re = m.s_re;
@@ -742,7 +762,7 @@ mod tests {
 		let mut s = PradState::new();
 		s.set_quadrature(8, 2);
 		s.compute_j0(&[0.0], &[0.0], 1.0, PATTERN_ISOTROPIC, 0.0);
-		s.form_matched_s(Z_REF as f32);
+		s.form_matched_s(Z_REF as f32, &[0.0], &[0.0], 0.0, 0.0);
 		close64(s.r_re[0], Z_REF, 1e-5, "R11");
 		close64(s.z0[0], Z_REF, 1e-6, "z0");
 		close64(s.s_re[0], 0.0, 1e-9, "S11 re");
@@ -758,7 +778,7 @@ mod tests {
 		let mut s = PradState::new();
 		s.set_quadrature(48, 2);
 		s.compute_j0(&[0.0, 20.0], &[0.0, 0.0], 1.0, PATTERN_ISOTROPIC, 0.0);
-		s.form_matched_s(Z_REF as f32);
+		s.form_matched_s(Z_REF as f32, &[0.0, 20.0], &[0.0, 0.0], 0.0, 0.0);
 		close64(s.z0[0], Z_REF, 1.0, "z0_1 ~ 50");
 		close64(s.z0[1], Z_REF, 1.0, "z0_2 ~ 50");
 		assert!(s.match_residual < TAU, "residual {}", s.match_residual);
@@ -774,7 +794,7 @@ mod tests {
 		let mut s = PradState::new();
 		s.set_quadrature(24, 2);
 		s.compute_j0(&[0.0, 0.5, 1.0], &[0.0, 0.25, -0.25], 1.0, PATTERN_ISOTROPIC, 0.0);
-		s.form_matched_s(Z_REF as f32);
+		s.form_matched_s(Z_REF as f32, &[0.0, 0.5, 1.0], &[0.0, 0.25, -0.25], 0.0, 0.0);
 		let n = 3;
 		assert!(s.match_residual < TAU, "residual {}", s.match_residual);
 		for p in 0..n {
@@ -787,6 +807,28 @@ mod tests {
 				close64(s.s_im[p * n + q], s.s_im[q * n + p], 1e-9, "S im symmetric");
 				close64(s.s_im[p * n + q], 0.0, 1e-8, "S im ~ 0");
 			}
+		}
+	}
+
+	#[test]
+	fn j0_irregular_reactance_matches_and_is_complex() {
+		use crate::match_s::{TAU, Z_REF};
+		let mut s = PradState::new();
+		s.set_quadrature(24, 2);
+		let x = [0.0f32, 0.5, 1.0];
+		let y = [0.0f32, 0.25, -0.25];
+		s.compute_j0(&x, &y, 1.0, PATTERN_ISOTROPIC, 0.0);
+		s.form_matched_s(Z_REF as f32, &x, &y, 10.0, 2.0);
+		let n = 3;
+		assert!(s.match_residual < TAU, "residual {}", s.match_residual);
+		assert!(s.z0_im.iter().any(|v| v.abs() > 1e-6), "z0 imag");
+		assert!(s.r_im[1].abs() > 1.0, "X01");
+		close64(s.r_im[1], s.r_im[3], 1e-12, "X01 = X10");
+		for p in 0..n {
+			let mag_ii = (s.s_re[p * n + p] * s.s_re[p * n + p]
+				+ s.s_im[p * n + p] * s.s_im[p * n + p])
+				.sqrt();
+			assert!(mag_ii < 2e-3, "|S{p}{p}|={mag_ii}");
 		}
 	}
 }

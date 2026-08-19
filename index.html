@@ -119,6 +119,14 @@
 								<label><input type="radio" name="pa-coupling-radio" id="pa-coupling-isolated" value="isolated" checked /> Isolated</label>
 								<label><input type="radio" name="pa-coupling-radio" id="pa-coupling-matched" value="matched" /> Matched</label>
 							</div>
+							<div class="form-group" id="pa-coupling-xnn-div" style="display:none">
+								<label for="pa-coupling-xnn">Reactance (Ω)</label>
+								<input type="number" value="0" step="1" id="pa-coupling-xnn" name="pa-coupling-xnn" />
+							</div>
+							<div class="form-group" id="pa-coupling-alpha-div" style="display:none">
+								<label for="pa-coupling-alpha">Decay α</label>
+								<input type="number" min="0" value="2" step="0.1" id="pa-coupling-alpha" name="pa-coupling-alpha" />
+							</div>
 						</div>
 						<div>
 							<h3>Power</h3>
@@ -380,6 +388,7 @@
 					<h2>Usage and Notes</h2>
 					<ul>
 						<li><strong id="help-element">Element</strong> [new Aug. 2026] defaults to isotropic over the front hemisphere, so calculated directivity is about +3 dBi for a uniform pattern. The Element section can instead apply a cos<sup>n</sup> power pattern: you set the peak broadside gain in dBi (minimum 3.01 dBi, i.e. 10·log<sub>10</sub>2), and n = 10<sup>(G/10)</sup>/2 − 1 is chosen so the pattern conserves power. Cos<sup>n</sup> is zero behind the array, so U/V samples outside the unit circle are dark. That pattern multiplies the array-factor intensity before directivity, EIRP, and beam metrics. Realized gain is directivity × accepted/stimulated, so it includes mismatch when Coupling is Matched. Aperture efficiency is realized gain over the geometric bound 4πA/λ<sup>2</sup> and can exceed 100% for small arrays with a directive element.</li>
+						<li><strong id="help-coupling">Coupling</strong> Isolated uses geometric array factor. Matched estimates an S-matrix from radiated-power overlap, then optionally adds a phenomenological mutual reactance jX<sub>nn</sub>(d<sub>min</sub>/ρ)<sup>α</sup> at the nearest-neighbor distance (any planar geometry). Reactance (Ω) is signed (positive inductive); Decay α controls the power-law falloff. Port match uses complex z<sub>0</sub> when reactance is nonzero.</li>
 						<li>The mesh can be made finer by increasing Points. However, increasing the number of points may result in laggy performance.</li>
 						<li>Clicking (or long pressing) elements in the phase/attenuation plots allows you to manually set phase/attenuation. <b>Be sure to select "enable override."</b> Additionally, the attenuation pop-up allows you to disable elements.</li>
 						<li>Hovering (or touching) the 2-D farfield plot or geometry plots will show the value of the plot under the cursor.</li>

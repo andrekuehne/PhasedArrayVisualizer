@@ -576,9 +576,17 @@ export class RadiatedPowerKernel {
     }
     /**
      * @param {number} z_ref
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} x_nn
+     * @param {number} alpha
      */
-    form_matched_s(z_ref) {
-        wasm.radiatedpowerkernel_form_matched_s(this.__wbg_ptr, z_ref);
+    form_matched_s(z_ref, x, y, x_nn, alpha) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_form_matched_s(this.__wbg_ptr, z_ref, ptr0, len0, ptr1, len1, x_nn, alpha);
     }
     /**
      * @returns {number}
@@ -680,6 +688,15 @@ export class RadiatedPowerKernel {
      */
     take_z0() {
         const ret = wasm.radiatedpowerkernel_take_z0(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    take_z0_im() {
+        const ret = wasm.radiatedpowerkernel_take_z0_im(this.__wbg_ptr);
         var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
         return v1;

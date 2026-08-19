@@ -47,11 +47,13 @@ const CHANGE_PA 	= 1 << 5;
 export class SceneControlPhasedArray extends SceneControl{
 	static autoUpdateURL = false;
 	constructor(parent){
-		super(parent, ['phase-bits', 'atten-lsb', 'atten-bits', 'atten-manual', 'phase-manual', 'phase-dither', 'coupling', 'steer-law']);
+		super(parent, ['phase-bits', 'atten-lsb', 'atten-bits', 'atten-manual', 'phase-manual', 'phase-dither', 'coupling', 'coupling-xnn', 'coupling-alpha', 'steer-law']);
 		this.pa = null;
 		this._matchedFreq = NaN;
 		this._matchedKind = null;
 		this._matchedN = null;
+		this._matchedXnn = NaN;
+		this._matchedAlpha = NaN;
 		this._steerFreq = NaN;
 		this.geometryControl = new SceneControlGeometry(this);
 		this.taperControl = new SceneControlAllTapers(this);
@@ -73,6 +75,8 @@ export class SceneControlPhasedArray extends SceneControl{
 		this.addEventListener('reset', () => {
 			this.find_element('coupling').value = 'isolated';
 			this.find_element('steer-law').value = 'geometric';
+			this.find_element('coupling-xnn').value = '0';
+			this.find_element('coupling-alpha').value = '2';
 			this.sync_mode_radios();
 		});
 		this.add_event_types(
@@ -101,6 +105,11 @@ export class SceneControlPhasedArray extends SceneControl{
 		for (const [value, radio] of Object.entries(this._steerLawRadios)){
 			if (radio) radio.checked = value === law;
 		}
+		const showX = coupling === 'matched';
+		const xnnDiv = document.getElementById(this.prepend + '-coupling-xnn-div');
+		const alphaDiv = document.getElementById(this.prepend + '-coupling-alpha-div');
+		if (xnnDiv) xnnDiv.style.display = showX ? 'flex' : 'none';
+		if (alphaDiv) alphaDiv.style.display = showX ? 'flex' : 'none';
 	}
 	couplingMode(){
 		return this.find_element('coupling').value === 'matched' ? 'matched' : 'isolated';
@@ -119,6 +128,15 @@ export class SceneControlPhasedArray extends SceneControl{
 	steerLaw(){
 		return this.find_element('steer-law').value === 'conjugate' ? 'conjugate' : 'geometric';
 	}
+	couplingXnn(){
+		const v = Number(this.find_element('coupling-xnn').value);
+		return Number.isFinite(v) ? v : 0;
+	}
+	couplingAlpha(){
+		const v = Number(this.find_element('coupling-alpha').value);
+		if (!Number.isFinite(v) || v < 0) return 2;
+		return v;
+	}
 	frequencyScale(){
 		const ele = this.parent.find_element('farfield-frequency', false);
 		const v = ele ? Number(ele.value) : 1;
@@ -126,7 +144,7 @@ export class SceneControlPhasedArray extends SceneControl{
 	}
 	control_changed(key){
 		super.control_changed(key);
-		if (key === 'coupling' || key === 'steer-law'){
+		if (key === 'coupling' || key === 'steer-law' || key === 'coupling-xnn' || key === 'coupling-alpha'){
 			this.sync_mode_radios();
 			if (typeof this.parent.update_url_parameters === 'function') this.parent.update_url_parameters();
 			this.request_recompute();
@@ -138,27 +156,34 @@ export class SceneControlPhasedArray extends SceneControl{
 		const kind = ep ? ep.kind : 0;
 		const elemN = ep ? ep.n : 0;
 		const n = pa.size;
+		const xnn = this.couplingXnn();
+		const alpha = this.couplingAlpha();
 		if (
 			pa.tRe && pa.tRe.length === n * n
 			&& this._matchedFreq === freq
 			&& this._matchedKind === kind
 			&& this._matchedN === elemN
+			&& this._matchedXnn === xnn
+			&& this._matchedAlpha === alpha
 		) return;
 		const kernel = getRadiatedPowerKernel();
 		const nMu = nMuFromGeometry(pa.geometry, freq);
 		kernel.set_quadrature(nMu, 2);
 		kernel.compute_j0(pa.geometry.x, pa.geometry.y, freq, kind, elemN);
-		kernel.form_matched_s(Z_REF);
+		kernel.form_matched_s(Z_REF, pa.geometry.x, pa.geometry.y, xnn, alpha);
 		pa.set_matched_basis(
 			kernel.take_z0(),
 			kernel.take_s_re(),
 			kernel.take_s_im(),
 			kernel.take_t_re(),
-			kernel.take_t_im()
+			kernel.take_t_im(),
+			kernel.take_z0_im()
 		);
 		this._matchedFreq = freq;
 		this._matchedKind = kind;
 		this._matchedN = elemN;
+		this._matchedXnn = xnn;
+		this._matchedAlpha = alpha;
 	}
 	/**
 	* Add callable objects to queue.
@@ -180,7 +205,7 @@ export class SceneControlPhasedArray extends SceneControl{
 		if (this.changed['phase-bits'] || this.changed['phase-dither']) changeFlag |= CHANGE_PHASEQ;
 		if (this.changed['atten-bits'] || this.changed['atten-lsb']) changeFlag |= CHANGE_ATTENQ;
 		if (this.changed['steer-law']) changeFlag |= CHANGE_PHASE;
-		if (this.changed['coupling']){
+		if (this.changed['coupling'] || this.changed['coupling-xnn'] || this.changed['coupling-alpha']){
 			changeFlag |= CHANGE_PHASE;
 			this.farfieldNeedsCalculation = true;
 		}
@@ -223,7 +248,9 @@ export class SceneControlPhasedArray extends SceneControl{
 				|| !hasT
 				|| this.geometryControl.calculationWaiting
 				|| this.elementControl.calculationWaiting
-				|| this._matchedFreq !== freq;
+				|| this._matchedFreq !== freq
+				|| this._matchedXnn !== this.couplingXnn()
+				|| this._matchedAlpha !== this.couplingAlpha();
 			if (basisDirty){
 				queue.add('Computing matched S...', () => {
 					if (this.couplingMode() !== 'matched') return;
@@ -241,7 +268,7 @@ export class SceneControlPhasedArray extends SceneControl{
 				if (this.steerLaw() === 'conjugate') this.pa.compute_conjugate_phase(freq);
 				else this.pa.compute_phase();
 				this._steerFreq = freq;
-				this.clear_changed('steer-law', 'coupling');
+				this.clear_changed('steer-law', 'coupling', 'coupling-xnn', 'coupling-alpha');
 			});
 		}
 		if (changeFlag & CHANGE_ATTEN){
