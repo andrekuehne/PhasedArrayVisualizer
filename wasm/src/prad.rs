@@ -276,6 +276,7 @@ impl PradState {
 
 	/// \(R = 2 Z_\mathrm{ref} P_H\), optional \(jX(\rho)\), match, power-wave \(S\).
 	/// Uses the current Gram; does not fill \(A\).
+	/// Finite \(z_\mathrm{common,re}>0\) skips the per-port solver.
 	pub fn form_matched_s(
 		&mut self,
 		z_ref: f32,
@@ -283,6 +284,8 @@ impl PradState {
 		y: &[f32],
 		x_nn: f32,
 		alpha: f32,
+		z_common_re: f32,
+		z_common_im: f32,
 	) {
 		if self.n == 0 || self.p_re.len() != self.n * self.n {
 			self.clear_matched();
@@ -297,6 +300,8 @@ impl PradState {
 			y,
 			x_nn as f64,
 			alpha as f64,
+			z_common_re as f64,
+			z_common_im as f64,
 		);
 		self.z0 = m.z0;
 		self.z0_im = m.z0_im;
@@ -762,7 +767,7 @@ mod tests {
 		let mut s = PradState::new();
 		s.set_quadrature(8, 2);
 		s.compute_j0(&[0.0], &[0.0], 1.0, PATTERN_ISOTROPIC, 0.0);
-		s.form_matched_s(Z_REF as f32, &[0.0], &[0.0], 0.0, 0.0);
+		s.form_matched_s(Z_REF as f32, &[0.0], &[0.0], 0.0, 0.0, 0.0, 0.0);
 		close64(s.r_re[0], Z_REF, 1e-5, "R11");
 		close64(s.z0[0], Z_REF, 1e-6, "z0");
 		close64(s.s_re[0], 0.0, 1e-9, "S11 re");
@@ -778,7 +783,7 @@ mod tests {
 		let mut s = PradState::new();
 		s.set_quadrature(48, 2);
 		s.compute_j0(&[0.0, 20.0], &[0.0, 0.0], 1.0, PATTERN_ISOTROPIC, 0.0);
-		s.form_matched_s(Z_REF as f32, &[0.0, 20.0], &[0.0, 0.0], 0.0, 0.0);
+		s.form_matched_s(Z_REF as f32, &[0.0, 20.0], &[0.0, 0.0], 0.0, 0.0, 0.0, 0.0);
 		close64(s.z0[0], Z_REF, 1.0, "z0_1 ~ 50");
 		close64(s.z0[1], Z_REF, 1.0, "z0_2 ~ 50");
 		assert!(s.match_residual < TAU, "residual {}", s.match_residual);
@@ -794,7 +799,7 @@ mod tests {
 		let mut s = PradState::new();
 		s.set_quadrature(24, 2);
 		s.compute_j0(&[0.0, 0.5, 1.0], &[0.0, 0.25, -0.25], 1.0, PATTERN_ISOTROPIC, 0.0);
-		s.form_matched_s(Z_REF as f32, &[0.0, 0.5, 1.0], &[0.0, 0.25, -0.25], 0.0, 0.0);
+		s.form_matched_s(Z_REF as f32, &[0.0, 0.5, 1.0], &[0.0, 0.25, -0.25], 0.0, 0.0, 0.0, 0.0);
 		let n = 3;
 		assert!(s.match_residual < TAU, "residual {}", s.match_residual);
 		for p in 0..n {
@@ -818,7 +823,7 @@ mod tests {
 		let x = [0.0f32, 0.5, 1.0];
 		let y = [0.0f32, 0.25, -0.25];
 		s.compute_j0(&x, &y, 1.0, PATTERN_ISOTROPIC, 0.0);
-		s.form_matched_s(Z_REF as f32, &x, &y, 10.0, 2.0);
+		s.form_matched_s(Z_REF as f32, &x, &y, 10.0, 2.0, 0.0, 0.0);
 		let n = 3;
 		assert!(s.match_residual < TAU, "residual {}", s.match_residual);
 		assert!(s.z0_im.iter().any(|v| v.abs() > 1e-6), "z0 imag");
@@ -830,5 +835,28 @@ mod tests {
 				.sqrt();
 			assert!(mag_ii < 2e-3, "|S{p}{p}|={mag_ii}");
 		}
+	}
+
+	#[test]
+	fn j0_common_z0_is_flat_and_mismatched() {
+		use crate::match_s::Z_REF;
+		let mut s = PradState::new();
+		s.set_quadrature(24, 2);
+		let x = [0.0f32, 0.5, 1.0];
+		let y = [0.0f32, 0.25, -0.25];
+		s.compute_j0(&x, &y, 1.0, PATTERN_ISOTROPIC, 0.0);
+		s.form_matched_s(Z_REF as f32, &x, &y, 0.0, 0.0, Z_REF as f32, 0.0);
+		assert_eq!(s.match_iterations, 0);
+		close64(s.z0[0], Z_REF, 0.0, "z0_0");
+		close64(s.z0[1], Z_REF, 0.0, "z0_1");
+		close64(s.z0[2], Z_REF, 0.0, "z0_2");
+		let mut max_sii = 0.0f64;
+		for p in 0..3 {
+			let mag_ii = (s.s_re[p * 3 + p] * s.s_re[p * 3 + p]
+				+ s.s_im[p * 3 + p] * s.s_im[p * 3 + p])
+				.sqrt();
+			max_sii = max_sii.max(mag_ii);
+		}
+		assert!(max_sii > 0.01, "common |Sii|={max_sii}");
 	}
 }

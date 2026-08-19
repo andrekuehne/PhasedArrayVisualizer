@@ -39,6 +39,7 @@
 	<input type="text" id="pa-phase-manual" hidden />
 	<input type="text" id="pa-power-scope" hidden value="element" />
 	<input type="text" id="pa-coupling" hidden value="isolated" />
+	<input type="text" id="pa-match-style" hidden value="common" />
 	<input type="text" id="pa-steer-law" hidden value="geometric" />
 	<div class="app">
 		<aside class="sidebar">
@@ -118,6 +119,18 @@
 							<div class="radio-row" id="pa-coupling-div">
 								<label><input type="radio" name="pa-coupling-radio" id="pa-coupling-isolated" value="isolated" checked /> Isolated</label>
 								<label><input type="radio" name="pa-coupling-radio" id="pa-coupling-matched" value="matched" /> Matched</label>
+							</div>
+							<div class="radio-row" id="pa-match-style-div" style="display:none">
+								<label><input type="radio" name="pa-match-style-radio" id="pa-match-style-per-port" value="per-port" /> Per-port</label>
+								<label><input type="radio" name="pa-match-style-radio" id="pa-match-style-common" value="common" checked /> Common Z0</label>
+							</div>
+							<div class="form-group" id="pa-coupling-z0-re-div" style="display:none">
+								<label for="pa-coupling-z0-re">Re(Z0) (Ω)</label>
+								<input type="number" min="0" value="45" step="1" id="pa-coupling-z0-re" name="pa-coupling-z0-re" />
+							</div>
+							<div class="form-group" id="pa-coupling-z0-im-div" style="display:none">
+								<label for="pa-coupling-z0-im">Im(Z0) (Ω)</label>
+								<input type="number" value="5" step="1" id="pa-coupling-z0-im" name="pa-coupling-z0-im" />
 							</div>
 							<div class="form-group" id="pa-coupling-xnn-div" style="display:none">
 								<label for="pa-coupling-xnn">Reactance (Ω)</label>
@@ -388,7 +401,7 @@
 					<h2>Usage and Notes</h2>
 					<ul>
 						<li><strong id="help-element">Element</strong> [new Aug. 2026] defaults to isotropic over the front hemisphere, so calculated directivity is about +3 dBi for a uniform pattern. The Element section can instead apply a cos<sup>n</sup> power pattern: you set the peak broadside gain in dBi (minimum 3.01 dBi, i.e. 10·log<sub>10</sub>2), and n = 10<sup>(G/10)</sup>/2 − 1 is chosen so the pattern conserves power. Cos<sup>n</sup> is zero behind the array, so U/V samples outside the unit circle are dark. That pattern multiplies the array-factor intensity before directivity, EIRP, and beam metrics. Realized gain is directivity × accepted/stimulated, so it includes mismatch when Coupling is Matched. Aperture efficiency is realized gain over the geometric bound 4πA/λ<sup>2</sup> and can exceed 100% for small arrays with a directive element.</li>
-						<li><strong id="help-coupling">Coupling</strong> Isolated uses geometric array factor. Matched estimates an S-matrix from radiated-power overlap, then optionally adds a phenomenological mutual reactance jX<sub>nn</sub>(d<sub>min</sub>/ρ)<sup>α</sup> at the nearest-neighbor distance (any planar geometry). Reactance (Ω) is signed (positive inductive); Decay α controls the power-law falloff. Port match uses complex z<sub>0</sub> when reactance is nonzero.</li>
+						<li><strong id="help-coupling">Coupling</strong> Isolated uses geometric array factor. Matched estimates an S-matrix from radiated-power overlap, then optionally adds a phenomenological mutual reactance jX<sub>nn</sub>(d<sub>min</sub>/ρ)<sup>α</sup> at the nearest-neighbor distance (any planar geometry). Reactance (Ω) is signed (positive inductive); Decay α controls the power-law falloff. Per-port solves individual z<sub>0</sub> so diag(S)≈0 (complex when reactance is nonzero). Common Z0 (the default) uses one complex reference on every port (Re default 45 Ω, Im default 5 Ω), so |S<sub>ii</sub>| varies over the array.</li>
 						<li><strong id="help-domain">Domain</strong> Spherical, U/V, and Ludwig3 plot the 2-D far-field. Z and S plot the matched-system matrices: Re(Z) and Im(Z) side by side with a shared Ω colorbar, and 20&nbsp;log<sub>10</sub>|S<sub>ij</sub>| in dB. Those views still use frequency scale (and Reactance/α when Coupling is Matched) and do not require switching Coupling.</li>
 						<li>The mesh can be made finer by increasing Points. However, increasing the number of points may result in laggy performance.</li>
 						<li>Clicking (or long pressing) elements in the phase/attenuation plots allows you to manually set phase/attenuation. <b>Be sure to select "enable override."</b> Additionally, the attenuation pop-up allows you to disable elements.</li>

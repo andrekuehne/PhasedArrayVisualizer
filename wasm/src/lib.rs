@@ -151,8 +151,11 @@ impl RadiatedPowerKernel {
 		y: &[f32],
 		x_nn: f32,
 		alpha: f32,
+		z_common_re: f32,
+		z_common_im: f32,
 	) {
-		self.state.form_matched_s(z_ref, x, y, x_nn, alpha);
+		self.state
+			.form_matched_s(z_ref, x, y, x_nn, alpha, z_common_re, z_common_im);
 	}
 
 	pub fn take_z0(&self) -> Vec<f64> {

@@ -1,9 +1,10 @@
 //! Radiative resistance, simultaneous port match, and power-wave \(S\).
 //!
 //! §6–8 of `docs/approximate_matched_basis.md`, plus a phenomenological
-//! mutual reactance \(X(\rho)\) and Kurokawa \(S\) at complex \(z_0\).
-//! Operates on an already-formed radiated-power Gram \(P_H\). Internals are
-//! f64; the Gram itself stays f32.
+//! mutual reactance \(X(\rho)\), Kurokawa \(S\) at complex \(z_0\), and an
+//! optional common complex reference \(z_c\) (§7.1). Operates on an
+//! already-formed radiated-power Gram \(P_H\). Internals are f64; the Gram
+//! itself stays f32.
 
 pub const Z_REF: f64 = 50.0;
 pub const EPS_Z: f64 = 1e-9;
@@ -52,11 +53,11 @@ impl MatchedS {
 	/// \(R = 2 Z_\mathrm{ref} P_H\), match on \(\Re(R)\), \(S\) from Hermitian \(R\).
 	#[allow(dead_code)]
 	pub fn from_gram(p_re: &[f32], p_im: &[f32], n: usize, z_ref: f64) -> Self {
-		Self::from_gram_coupled(p_re, p_im, n, z_ref, &[], &[], 0.0, 0.0)
+		Self::from_gram_coupled(p_re, p_im, n, z_ref, &[], &[], 0.0, 0.0, 0.0, 0.0)
 	}
 
-	/// Same as [`from_gram`], then \(Z = R + jX(\rho)\) and a complex conjugate match
-	/// when \(X_{nn}\neq 0\) and positions are valid.
+	/// Same as [`from_gram`], then \(Z = R + jX(\rho)\). Per-port conjugate match
+	/// unless \(\Re(z_c)>0\), in which case every port uses that common \(z_c\).
 	pub fn from_gram_coupled(
 		p_re: &[f32],
 		p_im: &[f32],
@@ -66,6 +67,8 @@ impl MatchedS {
 		y: &[f32],
 		x_nn: f64,
 		alpha: f64,
+		z_common_re: f64,
+		z_common_im: f64,
 	) -> Self {
 		let z_ref = if z_ref.is_finite() && z_ref > 0.0 {
 			z_ref
@@ -90,7 +93,14 @@ impl MatchedS {
 		}
 
 		let coupled = add_mutual_reactance(&mut r_im, x, y, n, x_nn, alpha);
-		if coupled {
+		if z_common_re.is_finite() && z_common_re > 0.0 {
+			let zc_im = if z_common_im.is_finite() {
+				z_common_im
+			} else {
+				0.0
+			};
+			Self::from_z_common(r_re, r_im, n, z_ref, z_common_re, zc_im, coupled)
+		} else if coupled {
 			Self::from_z_complex(r_re, r_im, n, z_ref)
 		} else {
 			Self::from_z_real(r_re, r_im, n, z_ref)
@@ -237,6 +247,66 @@ impl MatchedS {
 			t_re,
 			t_im,
 			iterations,
+			residual,
+		}
+	}
+
+	/// Skip the solver: every port uses the same complex \(z_c\) (\(\Re(z_c)>0\)).
+	fn from_z_common(
+		r_re: Vec<f64>,
+		r_im: Vec<f64>,
+		n: usize,
+		z_ref: f64,
+		zc_re: f64,
+		zc_im: f64,
+		coupled: bool,
+	) -> Self {
+		let nn = n * n;
+		let zc_re = zc_re.max(EPS_Z);
+		let z0 = vec![zc_re; n];
+		let z0_im = vec![zc_im; n];
+		let use_kurokawa = coupled || zc_im != 0.0;
+
+		let mut residual = 0.0f64;
+		let (s_re, s_im, t_re, t_im) = if use_kurokawa {
+			let mut work_re = vec![0.0f64; nn];
+			let mut work_im = vec![0.0f64; nn];
+			fill_z_plus_d(&r_re, &r_im, &z0, &z0_im, n, &mut work_re, &mut work_im);
+			let (ydiag_re, ydiag_im) = inverse_diag_cplx(&mut work_re, &mut work_im, n);
+			for p in 0..n {
+				let (zin_re, zin_im) =
+					zin_from_ypp(ydiag_re[p], ydiag_im[p], z0[p], z0_im[p]);
+				residual = residual.max((zin_re - zc_re).hypot(zin_im - zc_im));
+			}
+			form_s_and_t_kurokawa(&r_re, &r_im, &z0, &z0_im, n, z_ref)
+		} else {
+			let mut work = vec![0.0f64; nn];
+			fill_rre_plus_d(&r_re, &z0, n, &mut work);
+			let ydiag = inverse_diag_spd(&mut work, n);
+			for p in 0..n {
+				let ypp = ydiag[p];
+				let zin = if ypp.abs() < 1e-30 {
+					f64::INFINITY
+				} else {
+					1.0 / ypp - z0[p]
+				};
+				residual = residual.max((zin - zc_re).abs());
+			}
+			form_s_and_t(&r_re, &r_im, &z0, n, z_ref)
+		};
+
+		Self {
+			n,
+			z_ref,
+			z0,
+			z0_im,
+			r_re,
+			r_im,
+			s_re,
+			s_im,
+			t_re,
+			t_im,
+			iterations: 0,
 			residual,
 		}
 	}
@@ -901,6 +971,8 @@ mod tests {
 			&[0.0, 0.0],
 			0.0,
 			2.0,
+			0.0,
+			0.0,
 		);
 		close(a.z0[0], b.z0[0], 0.0, "z0");
 		close(a.s_re[1], b.s_re[1], 0.0, "S12");
@@ -922,6 +994,8 @@ mod tests {
 			&[0.0, 0.0],
 			x_nn,
 			2.0,
+			0.0,
+			0.0,
 		);
 		close(m.r_re[0], 50.0, 1e-12, "R11");
 		close(m.r_im[1], x_nn, 1e-12, "X12");
@@ -956,7 +1030,7 @@ mod tests {
 		let y = [0.0f32, 0.25, -0.25];
 		let x_nn = 8.0;
 		let alpha = 2.0;
-		let m = MatchedS::from_gram_coupled(&p_re, &p_im, n, Z_REF, &x, &y, x_nn, alpha);
+		let m = MatchedS::from_gram_coupled(&p_re, &p_im, n, Z_REF, &x, &y, x_nn, alpha, 0.0, 0.0);
 		assert!(m.residual < TAU, "residual {}", m.residual);
 
 		fn rho(i: usize, j: usize, x: &[f32], y: &[f32]) -> f64 {
@@ -981,7 +1055,7 @@ mod tests {
 			"closest pair is strongest"
 		);
 
-		let m0 = MatchedS::from_gram_coupled(&p_re, &p_im, n, Z_REF, &x, &y, x_nn, 0.0);
+		let m0 = MatchedS::from_gram_coupled(&p_re, &p_im, n, Z_REF, &x, &y, x_nn, 0.0, 0.0, 0.0);
 		close(m0.r_im[1], x_nn, 1e-12, "alpha0 X01");
 		close(m0.r_im[2], x_nn, 1e-12, "alpha0 X02");
 		close(m0.r_im[5], x_nn, 1e-12, "alpha0 X12");
@@ -1000,11 +1074,93 @@ mod tests {
 			&[0.0, 0.0, 0.0],
 			12.0,
 			3.0,
+			0.0,
+			0.0,
 		);
 		assert!(m.r_im.iter().all(|v| v.is_finite()), "X finite");
 		close(m.r_im[1], 0.0, 0.0, "coincident X01");
 		close(m.r_im[2], 12.0, 1e-12, "X02 = Xnn");
 		close(m.r_im[5], 12.0, 1e-12, "X12 = Xnn");
 		assert!(m.residual.is_finite());
+	}
+
+	#[test]
+	fn n1_common_zref_is_open() {
+		let p_re = [0.5f32];
+		let p_im = [0.0f32];
+		let m = MatchedS::from_gram_coupled(&p_re, &p_im, 1, Z_REF, &[], &[], 0.0, 0.0, Z_REF, 0.0);
+		close(m.z0[0], Z_REF, 0.0, "z0");
+		close(m.z0_im[0], 0.0, 0.0, "z0 im");
+		close(m.s_re[0], 0.0, 1e-12, "S11 re");
+		close(m.s_im[0], 0.0, 1e-12, "S11 im");
+		close(m.t_re[0], 1.0, 1e-12, "T11");
+		assert_eq!(m.iterations, 0);
+	}
+
+	#[test]
+	fn n1_common_real_mismatch() {
+		let p_re = [0.5f32];
+		let p_im = [0.0f32];
+		let zc = 40.0;
+		let m = MatchedS::from_gram_coupled(&p_re, &p_im, 1, Z_REF, &[], &[], 0.0, 0.0, zc, 0.0);
+		let r = 50.0;
+		let s = (r - zc) / (r + zc);
+		close(m.s_re[0], s, 1e-12, "S11");
+		close(m.s_im[0], 0.0, 1e-12, "S11 im");
+		close(m.z0[0], zc, 0.0, "z0");
+	}
+
+	#[test]
+	fn n1_common_complex_kurokawa() {
+		let p_re = [0.5f32];
+		let p_im = [0.0f32];
+		let zc_re = 50.0;
+		let zc_im = 10.0;
+		let m = MatchedS::from_gram_coupled(
+			&p_re, &p_im, 1, Z_REF, &[], &[], 0.0, 0.0, zc_re, zc_im,
+		);
+		// S = (Z - zc*)/(Z + zc) with Z = 50.
+		let num_re = 50.0 - zc_re;
+		let num_im = zc_im;
+		let den_re = 50.0 + zc_re;
+		let den_im = zc_im;
+		let d2 = den_re * den_re + den_im * den_im;
+		let s_re = (num_re * den_re + num_im * den_im) / d2;
+		let s_im = (num_im * den_re - num_re * den_im) / d2;
+		close(m.s_re[0], s_re, 1e-12, "S11 re");
+		close(m.s_im[0], s_im, 1e-12, "S11 im");
+		close(m.z0[0], zc_re, 0.0, "z0 re");
+		close(m.z0_im[0], zc_im, 0.0, "z0 im");
+	}
+
+	#[test]
+	fn two_port_common_z0_equal_and_sii_not_zero() {
+		let p_re = [0.5f32, 0.125, 0.125, 0.5];
+		let p_im = [0.0f32; 4];
+		let per = MatchedS::from_gram(&p_re, &p_im, 2, Z_REF);
+		let m = MatchedS::from_gram_coupled(
+			&p_re, &p_im, 2, Z_REF, &[], &[], 0.0, 0.0, Z_REF, 0.0,
+		);
+		close(m.z0[0], Z_REF, 0.0, "z0_0");
+		close(m.z0[1], Z_REF, 0.0, "z0_1");
+		close(m.z0_im[0], 0.0, 0.0, "z0 im");
+		let sii = m.s_re[0].hypot(m.s_im[0]).max(m.s_re[3].hypot(m.s_im[3]));
+		let per_sii = per.s_re[0].hypot(per.s_im[0]);
+		assert!(sii > 0.01, "common |Sii|={sii}");
+		assert!(sii > per_sii * 10.0, "common |Sii| vs per-port {sii} vs {per_sii}");
+
+		// Closed form S = (Z - zc I)(Z + zc I)^{-1} at zc = 40.
+		let zc = 40.0;
+		let m40 = MatchedS::from_gram_coupled(
+			&p_re, &p_im, 2, Z_REF, &[], &[], 0.0, 0.0, zc, 0.0,
+		);
+		let det = 90.0 * 90.0 - 12.5 * 12.5;
+		let s11 = (10.0 * 90.0 + 12.5 * (-12.5)) / det;
+		let s12 = (10.0 * (-12.5) + 12.5 * 90.0) / det;
+		close(m40.s_re[0], s11, 1e-12, "S11");
+		close(m40.s_re[1], s12, 1e-12, "S12");
+		close(m40.s_re[2], s12, 1e-12, "S21");
+		close(m40.s_re[3], s11, 1e-12, "S22");
+		close(m40.s_im.iter().fold(0.0f64, |a, v| a.max(v.abs())), 0.0, 1e-12, "S im");
 	}
 }

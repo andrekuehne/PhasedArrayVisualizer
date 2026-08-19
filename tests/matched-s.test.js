@@ -99,7 +99,7 @@ describe('matched S from J0 Prad', () => {
 				const k = kernels[kind];
 				k.set_quadrature(8, 2);
 				k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
-				k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0);
+				k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, 0, 0);
 				const z0 = k.take_z0();
 				const sRe = k.take_s_re();
 				const sIm = k.take_s_im();
@@ -131,7 +131,7 @@ describe('matched S from J0 Prad', () => {
 		const n = x.length;
 		k.set_quadrature(32, 2);
 		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, x, y, 0, 0);
+		k.form_matched_s(Z_REF, x, y, 0, 0, 0, 0);
 		const z0 = k.take_z0();
 		const sRe = k.take_s_re();
 		const sIm = k.take_s_im();
@@ -209,7 +209,7 @@ describe('matched S from J0 Prad', () => {
 		const k = kernels.simd;
 		k.set_quadrature(8, 2);
 		k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0);
+		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, 0, 0);
 		const tRe = k.take_t_re();
 		const tIm = k.take_t_im();
 		close(tRe[0], 1, 1e-6, 'T11');
@@ -226,7 +226,7 @@ describe('matched S from J0 Prad', () => {
 		const n = x.length;
 		k.set_quadrature(32, 2);
 		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, x, y, 0, 0);
+		k.form_matched_s(Z_REF, x, y, 0, 0, 0, 0);
 		const tRe = k.take_t_re();
 		const tIm = k.take_t_im();
 		assert.equal(tRe.length, n * n);
@@ -290,7 +290,7 @@ describe('matched S from J0 Prad', () => {
 		const nn = x.length;
 		k.set_quadrature(32, 2);
 		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, x, y, 0, 0);
+		k.form_matched_s(Z_REF, x, y, 0, 0, 0, 0);
 		const tRe = k.take_t_re();
 		const tIm = k.take_t_im();
 		const theta = 30;
@@ -331,7 +331,7 @@ describe('matched S from J0 Prad', () => {
 		const n = x.length;
 		k.set_quadrature(24, 2);
 		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, x, y, 10, 2);
+		k.form_matched_s(Z_REF, x, y, 10, 2, 0, 0);
 		const sRe = k.take_s_re();
 		const sIm = k.take_s_im();
 		const z0Im = k.take_z0_im();
@@ -347,5 +347,81 @@ describe('matched S from J0 Prad', () => {
 		let maxZim = 0;
 		for (let i = 0; i < z0Im.length; i++) maxZim = Math.max(maxZim, Math.abs(z0Im[i]));
 		assert.ok(maxZim > 1e-6, `z0 should be complex, max|Im|=${maxZim}`);
+	});
+
+	test('N=1 common Zref: S = 0, T = 1', () => {
+		const k = kernels.simd;
+		k.set_quadrature(8, 2);
+		k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, Z_REF, 0);
+		close(k.take_z0()[0], Z_REF, 1e-5, 'z0');
+		close(k.take_z0_im()[0], 0, 1e-12, 'z0 im');
+		close(k.take_s_re()[0], 0, 1e-8, 'S11 re');
+		close(k.take_t_re()[0], 1, 1e-6, 'T11');
+		assert.equal(k.match_iterations(), 0);
+	});
+
+	test('N=1 common real zc: S11 = (R-zc)/(R+zc)', () => {
+		const k = kernels.simd;
+		const zc = 40;
+		k.set_quadrature(8, 2);
+		k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, zc, 0);
+		const r = k.take_z_re()[0];
+		const s = (r - zc) / (r + zc);
+		close(k.take_s_re()[0], s, 1e-8, 'S11');
+		close(k.take_s_im()[0], 0, 1e-12, 'S11 im');
+		close(k.take_z0()[0], zc, 0, 'z0');
+	});
+
+	test('N=1 common complex zc: Kurokawa S = (Z-zc*)/(Z+zc)', () => {
+		const k = kernels.simd;
+		const zcRe = 50;
+		const zcIm = 10;
+		k.set_quadrature(8, 2);
+		k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, zcRe, zcIm);
+		const zRe = k.take_z_re()[0];
+		const zIm = k.take_z_im()[0];
+		const numRe = zRe - zcRe;
+		const numIm = zIm + zcIm;
+		const denRe = zRe + zcRe;
+		const denIm = zIm + zcIm;
+		const d2 = denRe * denRe + denIm * denIm;
+		const sRe = (numRe * denRe + numIm * denIm) / d2;
+		const sIm = (numIm * denRe - numRe * denIm) / d2;
+		close(k.take_s_re()[0], sRe, 1e-8, 'S11 re');
+		close(k.take_s_im()[0], sIm, 1e-8, 'S11 im');
+		close(k.take_z0()[0], zcRe, 0, 'z0 re');
+		close(k.take_z0_im()[0], zcIm, 0, 'z0 im');
+	});
+
+	test('8×8 common Z0 is flat and |Sii| exceeds per-port', () => {
+		const k = kernels.simd;
+		const nx = 8;
+		const ny = 8;
+		const {x, y} = rectArray(nx, ny, 0.5, 0.5);
+		const n = x.length;
+		k.set_quadrature(32, 2);
+		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s(Z_REF, x, y, 0, 0, 0, 0);
+		const sPer = k.take_s_re();
+		const sImPer = k.take_s_im();
+		let maxPer = 0;
+		for (let i = 0; i < n; i++) maxPer = Math.max(maxPer, mag(sPer[i * n + i], sImPer[i * n + i]));
+		k.form_matched_s(Z_REF, x, y, 0, 0, Z_REF, 0);
+		const z0 = k.take_z0();
+		const z0Im = k.take_z0_im();
+		const sRe = k.take_s_re();
+		const sIm = k.take_s_im();
+		assert.equal(k.match_iterations(), 0);
+		for (let i = 0; i < n; i++){
+			close(z0[i], Z_REF, 0, `z0[${i}]`);
+			close(z0Im[i], 0, 0, `z0_im[${i}]`);
+		}
+		let maxSii = 0;
+		for (let i = 0; i < n; i++) maxSii = Math.max(maxSii, mag(sRe[i * n + i], sIm[i * n + i]));
+		assert.ok(maxSii > 0.01, `common max |Sii|=${maxSii}`);
+		assert.ok(maxSii > maxPer * 10, `common ${maxSii} vs per-port ${maxPer}`);
 	});
 });
