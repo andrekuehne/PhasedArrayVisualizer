@@ -514,8 +514,29 @@ export class FarfieldLudwig3 extends FarfieldABC{
 	}
 }
 
+/** Stub Domain entries: plot Z/S matrices, not a farfield mesh. */
+export class FarfieldMatrixZ{
+	static title = 'Z';
+	static domain = 'z';
+	static args = ['farfield-frequency'];
+	static controls = {
+		'farfield-frequency': CON_FREQ,
+	};
+}
+
+export class FarfieldMatrixS{
+	static title = 'S';
+	static domain = 's';
+	static args = ['farfield-frequency'];
+	static controls = {
+		'farfield-frequency': CON_FREQ,
+	};
+}
+
 export const FarfieldDomains = [
 	FarfieldSpherical,
 	FarfieldUV,
 	FarfieldLudwig3,
+	FarfieldMatrixZ,
+	FarfieldMatrixS,
 ]

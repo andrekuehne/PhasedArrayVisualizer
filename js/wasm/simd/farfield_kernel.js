@@ -701,6 +701,24 @@ export class RadiatedPowerKernel {
         wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
         return v1;
     }
+    /**
+     * @returns {Float64Array}
+     */
+    take_z_im() {
+        const ret = wasm.radiatedpowerkernel_take_z_im(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    take_z_re() {
+        const ret = wasm.radiatedpowerkernel_take_z_re(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
 }
 if (Symbol.dispose) RadiatedPowerKernel.prototype[Symbol.dispose] = RadiatedPowerKernel.prototype.free;
 

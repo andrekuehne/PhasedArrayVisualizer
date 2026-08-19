@@ -53,6 +53,8 @@ export class PhasedArray{
 		this.tIm = null;
 		this.sRe = null;
 		this.sIm = null;
+		this.zRe = null;
+		this.zIm = null;
 		this.z0 = null;
 		this.z0Im = null;
 		this.reflectionGamma = 0;
@@ -150,13 +152,15 @@ export class PhasedArray{
 			this.vIdealPhaseFactor[i] = aligned[i] - this.vIllumPhaseFactor[i];
 		}
 	}
-	set_matched_basis(z0, sRe, sIm, tRe, tIm, z0Im){
+	set_matched_basis(z0, sRe, sIm, tRe, tIm, z0Im, zRe, zIm){
 		this.z0 = z0;
 		this.z0Im = z0Im || null;
 		this.sRe = sRe;
 		this.sIm = sIm;
 		this.tRe = tRe;
 		this.tIm = tIm;
+		this.zRe = zRe || null;
+		this.zIm = zIm || null;
 	}
 	clear_matched_basis(){
 		this.z0 = null;
@@ -165,6 +169,8 @@ export class PhasedArray{
 		this.sIm = null;
 		this.tRe = null;
 		this.tIm = null;
+		this.zRe = null;
+		this.zIm = null;
 		this.reflectionGamma = 0;
 	}
 	set_manual_phase(index, override, phaseRad){

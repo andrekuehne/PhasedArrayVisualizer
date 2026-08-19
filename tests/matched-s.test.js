@@ -112,6 +112,13 @@ describe('matched S from J0 Prad', () => {
 				close(tRe[0], 1, 1e-6, 'T11');
 				close(tIm[0], 0, 1e-12, 'T11 im');
 				assert.ok(k.match_residual() < TAU, `residual ${k.match_residual()}`);
+				const pRe = k.take_re();
+				const zRe = k.take_z_re();
+				const zIm = k.take_z_im();
+				assert.equal(zRe.length, 1);
+				assert.equal(zIm.length, 1);
+				close(zRe[0], 2 * Z_REF * pRe[0], 1e-4, 'Z re = 2 Zref P_H');
+				close(zIm[0], 0, 1e-8, 'Z im');
 			});
 		});
 	}
@@ -131,6 +138,19 @@ describe('matched S from J0 Prad', () => {
 		assert.equal(k.n_elements(), n);
 		assert.equal(z0.length, n);
 		assert.equal(sRe.length, n * n);
+		const pRe = k.take_re();
+		const zRe = k.take_z_re();
+		const zIm = k.take_z_im();
+		assert.equal(zRe.length, n * n);
+		assert.equal(zIm.length, n * n);
+		let maxZim = 0;
+		let maxZerr = 0;
+		for (let i = 0; i < n * n; i++){
+			maxZim = Math.max(maxZim, Math.abs(zIm[i]));
+			maxZerr = Math.max(maxZerr, Math.abs(zRe[i] - 2 * Z_REF * pRe[i]));
+		}
+		assert.ok(maxZim < 1e-8, `max |Zim|=${maxZim}`);
+		assert.ok(maxZerr < 1e-3, `Z vs 2 Zref P_H max err ${maxZerr}`);
 		assert.ok(k.match_residual() < TAU, `residual ${k.match_residual()}`);
 
 		let maxSii = 0;

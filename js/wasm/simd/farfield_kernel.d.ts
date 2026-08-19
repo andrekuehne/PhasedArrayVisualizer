@@ -75,6 +75,8 @@ export class RadiatedPowerKernel {
     take_t_re(): Float64Array;
     take_z0(): Float64Array;
     take_z0_im(): Float64Array;
+    take_z_im(): Float64Array;
+    take_z_re(): Float64Array;
 }
 
 /**
@@ -190,6 +192,8 @@ export interface InitOutput {
     readonly radiatedpowerkernel_take_t_re: (a: number) => [number, number];
     readonly radiatedpowerkernel_take_z0: (a: number) => [number, number];
     readonly radiatedpowerkernel_take_z0_im: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_z_im: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_z_re: (a: number) => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;

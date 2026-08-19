@@ -163,6 +163,14 @@ impl RadiatedPowerKernel {
 		self.state.z0_im.clone()
 	}
 
+	pub fn take_z_re(&self) -> Vec<f64> {
+		self.state.r_re.clone()
+	}
+
+	pub fn take_z_im(&self) -> Vec<f64> {
+		self.state.r_im.clone()
+	}
+
 	pub fn take_s_re(&self) -> Vec<f64> {
 		self.state.s_re.clone()
 	}

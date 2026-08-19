@@ -114,6 +114,10 @@ export class SceneControlPhasedArray extends SceneControl{
 	couplingMode(){
 		return this.find_element('coupling').value === 'matched' ? 'matched' : 'isolated';
 	}
+	_matrix_domain_selected(){
+		const ff = this.parent.farfieldControl;
+		return ff != null && typeof ff.isMatrixDomain === 'function' && ff.isMatrixDomain();
+	}
 	/**
 	 * Force Isolated when a rebuilt array is too large for matched S.
 	 * A later manual Coupling click is not a rebuild, so it stays matched.
@@ -160,6 +164,7 @@ export class SceneControlPhasedArray extends SceneControl{
 		const alpha = this.couplingAlpha();
 		if (
 			pa.tRe && pa.tRe.length === n * n
+			&& pa.zRe && pa.zRe.length === n * n
 			&& this._matchedFreq === freq
 			&& this._matchedKind === kind
 			&& this._matchedN === elemN
@@ -177,7 +182,9 @@ export class SceneControlPhasedArray extends SceneControl{
 			kernel.take_s_im(),
 			kernel.take_t_re(),
 			kernel.take_t_im(),
-			kernel.take_z0_im()
+			kernel.take_z0_im(),
+			kernel.take_z_re(),
+			kernel.take_z_im()
 		);
 		this._matchedFreq = freq;
 		this._matchedKind = kind;
@@ -241,11 +248,14 @@ export class SceneControlPhasedArray extends SceneControl{
 			});
 		}
 		const coupling = this.couplingMode();
-		if (coupling === 'matched'){
+		const wantsMatch = coupling === 'matched' || this._matrix_domain_selected();
+		if (wantsMatch){
 			const n = this.pa ? this.pa.size : 0;
 			const hasT = this.pa && this.pa.tRe && this.pa.tRe.length === n * n;
+			const hasZ = this.pa && this.pa.zRe && this.pa.zRe.length === n * n;
 			const basisDirty = this.pa === null
 				|| !hasT
+				|| !hasZ
 				|| this.geometryControl.calculationWaiting
 				|| this.elementControl.calculationWaiting
 				|| this._matchedFreq !== freq
@@ -253,11 +263,13 @@ export class SceneControlPhasedArray extends SceneControl{
 				|| this._matchedAlpha !== this.couplingAlpha();
 			if (basisDirty){
 				queue.add('Computing matched S...', () => {
-					if (this.couplingMode() !== 'matched') return;
+					if (this.couplingMode() !== 'matched' && !this._matrix_domain_selected()) return;
 					this.compute_matched_basis(freq);
 				});
-				changeFlag |= CHANGE_PHASE;
-				this.farfieldNeedsCalculation = true;
+				if (coupling === 'matched'){
+					changeFlag |= CHANGE_PHASE;
+					this.farfieldNeedsCalculation = true;
+				}
 			}
 		}
 		if (changeFlag & CHANGE_PHASE){
@@ -564,9 +576,19 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 	constructor(parent, key){
 		super(parent, key, FarfieldDomains);
 		this.ff = null;
+		this._ffDirty = false;
+		this._wasMatrix = false;
 		this.validMaxMonitors = new Set(['directivity', 'pattern-metrics']);
 		this.maxMonitors = {};
-		this.add_event_types('farfield-changed', 'farfield-calculation-complete');
+		this.add_event_types('farfield-changed', 'farfield-calculation-complete', 'matrix-plot-ready');
+	}
+	isMatrixDomain(){
+		const kls = this.selected_class();
+		return kls != null && (kls.domain === 'z' || kls.domain === 's');
+	}
+	matrixKind(){
+		if (!this.isMatrixDomain()) return null;
+		return this.selected_class().domain;
 	}
 	control_changed(key){
 		super.control_changed(key);
@@ -574,7 +596,7 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 			this.request_recompute();
 			return;
 		}
-		if (key !== 'farfield-frequency' || this.ff === null) return;
+		if (key !== 'farfield-frequency' || (this.ff === null && !this.isMatrixDomain())) return;
 		this.parent.update_url_parameters();
 	}
 	/**
@@ -592,6 +614,16 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 		if (!(key in this.maxMonitors)) this.maxMonitors[key] = [];
 		this.maxMonitors[key].push(callback);
 	}
+	_notify_farfield_complete(){
+		this.trigger_event('farfield-calculation-complete', this.ff);
+		for (const [key, value] of Object.entries(this.maxMonitors)){
+			let val;
+			if (key == 'directivity') val = this.ff.dirMax;
+			else if (key == 'pattern-metrics') val = this.ff.patternMetrics;
+			else throw Error(`Unknown max key ${key}.`)
+			value.forEach((e) => e(val));
+		}
+	}
 	/**
 	* Add callable objects to queue.
 	*
@@ -601,9 +633,22 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 	* */
 	add_to_queue(queue){
 		const arrayControl = this.parent.arrayControl;
-		let needsRecalc = arrayControl.farfieldNeedsCalculation;
+		if (this.isMatrixDomain()){
+			if (this.changed['farfield-frequency'] || arrayControl.farfieldNeedsCalculation){
+				this._ffDirty = true;
+			}
+			this._wasMatrix = true;
+			this.clear_changed('farfield-domain', 'farfield-points', 'farfield-uv-bound', 'farfield-frequency');
+			queue.add('Notifying matrix plot...', () => {
+				this.trigger_event('matrix-plot-ready', arrayControl.pa);
+			});
+			this.needsRedraw = false;
+			return;
+		}
 
-		if (this.changed['farfield-points'] || this.changed['farfield-frequency'] || this.changed['farfield-uv-bound'] || this.changed['farfield-domain'] || this.ff === null){
+		let needsRecalc = arrayControl.farfieldNeedsCalculation;
+		const domainClassChanged = this.ff != null && this.ff.domain !== this.selected_class().domain;
+		if (this.changed['farfield-points'] || this.changed['farfield-frequency'] || this.changed['farfield-uv-bound'] || this.ff === null || this._ffDirty || domainClassChanged){
 			queue.add('Creating farfield mesh...', () => {
 				this.ff = this.build_active_object();
 				this.trigger_event('farfield-changed', this.ff);
@@ -615,15 +660,16 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 				return this.ff.calculator_loop(arrayControl.pa)
 			});
 			queue.add("Notifying farfield change...", () => {
-				this.trigger_event('farfield-calculation-complete', this.ff);
-				for (const [key, value] of Object.entries(this.maxMonitors)){
-					let val;
-					if (key == 'directivity') val = this.ff.dirMax;
-					else if (key == 'pattern-metrics') val = this.ff.patternMetrics;
-					else throw Error(`Unknown max key ${key}.`)
-					value.forEach((e) => e(val));
-				}
+				this._ffDirty = false;
+				this._wasMatrix = false;
+				this._notify_farfield_complete();
 			})
+		}
+		else if (this._wasMatrix && this.ff != null){
+			this._wasMatrix = false;
+			queue.add("Notifying farfield change...", () => {
+				this._notify_farfield_complete();
+			});
 		}
 		this.needsRedraw = needsRecalc;
 	}
