@@ -146,7 +146,7 @@ fn geometry_ok(h: f64, ell: f64, a: f64, freq_scale: f64) -> bool {
 }
 
 /// \(J_0(x)\) (even). Series for \(|x|<20\), Hankel otherwise.
-fn bessel_j0(x: f64) -> f64 {
+pub(crate) fn bessel_j0(x: f64) -> f64 {
 	let ax = x.abs();
 	if ax < 1e-14 {
 		return 1.0;
@@ -215,7 +215,7 @@ fn bessel_j1(x: f64) -> f64 {
 }
 
 /// \(J_2(x)=(2/x)J_1(x)-J_0(x)\) (even).
-fn bessel_j2(x: f64) -> f64 {
+pub(crate) fn bessel_j2(x: f64) -> f64 {
 	let ax = x.abs();
 	if ax < 1e-14 {
 		return 0.0;
@@ -241,7 +241,7 @@ fn exp_neg_j_kz_z(kz_re: f64, kz_im: f64, abs_z: f64) -> Cpx {
 	Cpx::new(mag * phase.cos(), -mag * phase.sin())
 }
 
-fn map_gl(xi: f64, wi: f64, a: f64, b: f64) -> (f64, f64) {
+pub(crate) fn map_gl(xi: f64, wi: f64, a: f64, b: f64) -> (f64, f64) {
 	let half = 0.5 * (b - a);
 	(half * xi + 0.5 * (a + b), half * wi)
 }
@@ -393,6 +393,17 @@ fn z_hertzian_spectral(
 	}
 
 	acc.scale(pref)
+}
+
+pub(crate) fn z_hertzian_spectral_tuple(
+	dx: f64,
+	dy: f64,
+	dz: f64,
+	ell: f64,
+	freq_scale: f64,
+	cfg: SpectralQuadConfig,
+) -> (f64, f64) {
+	z_hertzian_spectral(dx, dy, dz, ell, freq_scale, cfg).tuple()
 }
 
 /// Mutual (or self when `dx==0 && dy==0`) spectral PEC-dipole \(Z\). Ohms.

@@ -467,6 +467,44 @@ impl PradState {
 		});
 	}
 
+	#[cfg(test)]
+	fn fill_green_slab_dipole_z(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		h: f32,
+		ell: f32,
+		a: f32,
+		env: crate::green_slab::SlabEnv,
+	) {
+		let h = h as f64;
+		let ell = ell as f64;
+		let a = a as f64;
+		let fs = frequency_scale as f64;
+		self.fill_green_pec_z_with(x, y, |dx, dy| {
+			crate::green_slab::z_pair_slab_dipole(dx, dy, h, ell, a, fs, env)
+		});
+	}
+
+	#[cfg(test)]
+	fn form_green_slab_dipole(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		h: f32,
+		ell: f32,
+		a: f32,
+		env: crate::green_slab::SlabEnv,
+		z_ref: f32,
+		z_common_re: f32,
+		x_self: f64,
+	) {
+		self.fill_green_slab_dipole_z(x, y, frequency_scale, h, ell, a, env);
+		self.form_from_z(z_ref, z_common_re, x_self);
+	}
+
 	/// [`MatchedS::from_z`] on the current Green \(Z\) (`r_re`/`r_im`).
 	/// \(x_\mathrm{self}\) is added to \(\mathrm{diag}(\Im Z)\).
 	pub fn form_from_z(&mut self, z_ref: f32, z_common_re: f32, x_self: f64) {
@@ -1378,5 +1416,106 @@ mod tests {
 			closed.p_re.is_empty() && spectral.p_re.is_empty(),
 			"Green path must not fill Gram"
 		);
+	}
+
+	fn fill_green_slab_dipole_z_naive(
+		s: &mut PradState,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		h: f32,
+		ell: f32,
+		a: f32,
+		env: crate::green_slab::SlabEnv,
+	) {
+		if x.len() != y.len() || x.is_empty() {
+			s.n = 0;
+			s.r_re.clear();
+			s.r_im.clear();
+			return;
+		}
+		let n = x.len();
+		s.n = n;
+		let nn = n * n;
+		s.r_re.clear();
+		s.r_re.resize(nn, 0.0);
+		s.r_im.clear();
+		s.r_im.resize(nn, 0.0);
+		let h = h as f64;
+		let ell = ell as f64;
+		let a = a as f64;
+		let fs = frequency_scale as f64;
+		for p in 0..n {
+			for q in 0..n {
+				let dx = x[p] as f64 - x[q] as f64;
+				let dy = y[p] as f64 - y[q] as f64;
+				let (re, im) = crate::green_slab::z_pair_slab_dipole(dx, dy, h, ell, a, fs, env);
+				s.r_re[p * n + q] = re;
+				s.r_im[p * n + q] = im;
+			}
+		}
+	}
+
+	#[test]
+	fn slab_4x4_unique_lag_matches_naive() {
+		use crate::green::{DEFAULT_A, DEFAULT_ELL, DEFAULT_H};
+		use crate::green_slab::SlabEnv;
+		let h = DEFAULT_H as f32;
+		let ell = DEFAULT_ELL as f32;
+		let a = DEFAULT_A as f32;
+		let env = SlabEnv::DEFAULT;
+		let (x, y) = rect_xy(4, 4, 0.5, 0.5);
+		let mut uniq = PradState::new();
+		let mut naive = PradState::new();
+		uniq.fill_green_slab_dipole_z(&x, &y, 1.0, h, ell, a, env);
+		fill_green_slab_dipole_z_naive(&mut naive, &x, &y, 1.0, h, ell, a, env);
+		assert_eq!(uniq.n_unique_lag, 16, "4×4 lattice U = nx ny");
+		let mut max_d = 0.0f64;
+		for i in 0..uniq.r_re.len() {
+			max_d = max_d.max((uniq.r_re[i] - naive.r_re[i]).abs());
+			max_d = max_d.max((uniq.r_im[i] - naive.r_im[i]).abs());
+		}
+		assert!(max_d < 1e-10, "slab unique vs naïve max|Δ|={max_d}");
+		let n = 16;
+		for p in 0..n {
+			for q in 0..n {
+				let a = uniq.r_re[p * n + q].hypot(uniq.r_im[p * n + q]);
+				let b = uniq.r_re[q * n + p].hypot(uniq.r_im[q * n + p]);
+				assert!((uniq.r_re[p * n + q] - uniq.r_re[q * n + p]).abs() < 1e-12);
+				assert!((uniq.r_im[p * n + q] - uniq.r_im[q * n + p]).abs() < 1e-12);
+				assert!(a.is_finite() && b.is_finite());
+			}
+		}
+	}
+
+	#[test]
+	fn slab_4x4_from_z_s_finite_no_gram() {
+		use crate::green::{DEFAULT_A, DEFAULT_ELL, DEFAULT_H};
+		use crate::green_slab::SlabEnv;
+		use crate::match_s::Z_REF;
+		let h = DEFAULT_H as f32;
+		let ell = DEFAULT_ELL as f32;
+		let a = DEFAULT_A as f32;
+		let (x, y) = rect_xy(4, 4, 0.5, 0.5);
+		let mut s = PradState::new();
+		s.form_green_slab_dipole(
+			&x,
+			&y,
+			1.0,
+			h,
+			ell,
+			a,
+			SlabEnv::DEFAULT,
+			Z_REF as f32,
+			Z_REF as f32,
+			0.0,
+		);
+		assert_eq!(s.s_re.len(), 16 * 16);
+		assert!(s.s_re.iter().chain(s.s_im.iter()).all(|v| v.is_finite()));
+		assert!(s.t_re.iter().chain(s.t_im.iter()).all(|v| v.is_finite()));
+		assert!(s.p_re.is_empty(), "slab Green path must not fill Gram");
+		for i in 0..16 {
+			assert!(s.s_re[i * 16 + i].hypot(s.s_im[i * 16 + i]).is_finite());
+		}
 	}
 }

@@ -1,6 +1,7 @@
 mod bessel;
 mod element;
 mod green;
+mod green_slab;
 mod green_spectral;
 mod kernel;
 mod match_s;

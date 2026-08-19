@@ -591,6 +591,61 @@ Same `Z_pair` / `F_iso` interface. Sommerfeld + TM0 residue. New env params
 magnetic Hertzian slot (choose one and document). Gram still not \(\Re(Z)\).
 Surface-wave power is not AF intensity.
 
+**Owner intent:** slab spectral \(G\) for the WP1 \(+\hat x\) short dipole (not
+the magnetic slot). Power budget split from the same \(G\). No GUI (WP7b).
+
+### WP7 results (implemented)
+
+- Radiator: WP1 finite short dipole. Environment: air \(z>0\), dipole at \(z=h\),
+  dielectric \(-h_\mathrm{sub}<z<0\) with \(\varepsilon=\varepsilon_r(1-j\tan\delta)\),
+  PEC at \(z=-h_\mathrm{sub}\).
+- Files: `wasm/src/green_slab.rs`; `mod green_slab;` in `wasm/src/lib.rs`;
+  `wasm/src/prad.rs` test helpers `fill_green_slab_dipole_z` /
+  `form_green_slab_dipole` (unique-lag callback, no bindgen). Production PEC
+  path is still `green.rs`. No GUI, no wasm-bindgen.
+- Signatures:
+
+```text
+SlabEnv { eps_r, h_sub, tan_delta }
+DEFAULT: 10, 0.05, 0     PEC_LIMIT: 12, 1e-6, 0
+z_pair_slab_dipole(dx, dy, h, ell, a, freq_scale, env) -> (re, im)
+f_iso_slab_dipole(theta, phi, h, ell, freq_scale, env) -> (Eθ, Eφ)
+f_iso_slab_dipole_power(...) -> |F|²
+SlabPowerBudget { re_z_self, p_rad, p_sw, p_diss, closure_residual }
+slab_dipole_power_budget(h, ell, a, freq_scale, env)
+```
+
+- \(Z\): free-space Hertzian (self \(Z_\mathrm{fs}\), mutual coplanar Sommerfeld)
+  plus slab reflection \(\Gamma_\mathrm{TE}(k_\rho),\Gamma_\mathrm{TM}(k_\rho)\)
+  with analytic TM0 residue. \(h_\mathrm{sub}\to 0\) recovers WP1 PEC
+  (\(|\Delta Z|<10^{-3}\,\Omega\)).
+- \(F^\mathrm{iso}\): space-wave saddle of the same spectral \(\tilde E\)
+  (\(e^{j k_z h}+\Gamma e^{-j k_z h}\), TE/TM split). Back hemisphere zero.
+  No surface-wave term in the pattern.
+- Power (unit current; ohm \(\equiv\) watt in this basis):
+  \(P_\mathrm{rad}\) from the propagating \(k_\rho<k\) branch,
+  \(P_\mathrm{sw}\) from the TM0 indentation jump \(-j\pi\operatorname{Res}\),
+  \(P_\mathrm{diss}=\operatorname{Re}Z-P_\mathrm{rad}-P_\mathrm{sw}\)
+  (evan continuum / \(\tan\delta\)). Lossless: \(P_\mathrm{diss}\approx 0\),
+  \(P_\mathrm{sw}>0\) for the default slab. **EIRP stays**
+  \(D\times P_\mathrm{stimulated}\) (WP7b must not scale EIRP by \(P_\mathrm{rad}\)).
+- Per-lag (native release, default env): self \(\sim 290\,\mu\mathrm{s}\);
+  mutual \(\sim 0.9\,\mathrm{ms}\). 32×32 unique-lag fill \(\sim 0.3\)–\(1\,\mathrm{s}\)
+  native; WASM will be slower. Geometry-change only, not per-steer.
+
+```text
+WP7 done. Next: WP7b GUI slab element.
+API: z_pair_slab_dipole / f_iso_slab_dipole / slab_dipole_power_budget
+File: wasm/src/green_slab.rs
+Radiator: WP1 +x short dipole (not magnetic slot). Slot is WP8.
+EIRP: P_stimulated, not P_rad.
+No bindgen, no GUI.
+WP7b: Element "Slab dipole", controls (h,ℓ,a,ε_r,h_sub,tanδ,z0,xself),
+  form_green_slab_dipole bindgen, apply_green_slab_pattern,
+  power rows Radiated / Surface wave / Substrate loss / Closure residual.
+  Do not change eirp = dirMax * pAcc.
+```
+
 ---
 
 ## 14. WP8 — Patch as two slots on WP7 \(G\)
