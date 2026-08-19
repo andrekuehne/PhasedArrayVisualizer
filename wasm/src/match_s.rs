@@ -2,16 +2,18 @@
 //!
 //! §6–8 of `docs/approximate_matched_basis.md`: \(Z=R+jX_\mathrm{mutual}+jX_\mathrm{self}I\),
 //! a real per-port or common \(z_0\), and real-reference \(S\) and \(T\). Operates
-//! on an already-formed radiated-power Gram \(P_H\). Internals are f64; the Gram
-//! itself stays f32.
+//! Internals are f64; the Gram itself stays f32. Dense solves go through
+//! [`crate::linalg`] (faer). Textbook LU/Cholesky remains in
+//! [`crate::legacy_linalg`] for parity tests only.
 
 pub const Z_REF: f64 = 50.0;
 pub const EPS_Z: f64 = 1e-9;
 pub const K_MAX: u32 = 200;
 pub const TAU: f64 = 1e-3;
 
-const PIVOT_FLOOR: f64 = 1e-18;
 const MATCH_BETA: f64 = 0.5;
+
+use crate::linalg as la;
 
 /// Result of \(P_H \to Z=R+jX \to z_0 \to S\).
 pub struct MatchedS {
@@ -222,7 +224,7 @@ impl MatchedS {
 			iterations += 1;
 			let mut z_next = vec![0.0f64; n];
 			fill_rre_plus_d(&r_re, &z0, n, &mut work);
-			let ydiag = inverse_diag_spd(&mut work, n);
+			let ydiag = la::inverse_diag_spd(&work, n);
 			for p in 0..n {
 				let ypp = ydiag[p];
 				let zin = if ypp.abs() < 1e-30 {
@@ -279,7 +281,7 @@ impl MatchedS {
 				beta = MATCH_BETA;
 			}
 			fill_z_plus_d(&r_re, &r_im, &z0, &z0_im, n, &mut work_re, &mut work_im);
-			let (ydiag_re, ydiag_im) = inverse_diag_cplx(&mut work_re, &mut work_im, n);
+			let (ydiag_re, ydiag_im) = la::inverse_diag_cplx(&work_re, &work_im, n);
 			let mut z_next = vec![0.0f64; n];
 			let mut delta = 0.0f64;
 			for p in 0..n {
@@ -569,7 +571,9 @@ fn zin_from_ypp(ypp_re: f64, ypp_im: f64, z0_re: f64, z0_im: f64) -> (f64, f64) 
 	if ypp_re.hypot(ypp_im) < 1e-30 {
 		return (f64::INFINITY, 0.0);
 	}
-	let (inv_re, inv_im) = cdiv(1.0, 0.0, ypp_re, ypp_im);
+	let d = ypp_re * ypp_re + ypp_im * ypp_im;
+	let inv_re = ypp_re / d;
+	let inv_im = -ypp_im / d;
 	(inv_re - z0_re, inv_im - z0_im)
 }
 
@@ -597,224 +601,6 @@ fn fill_z_plus_d(
 	}
 }
 
-#[inline]
-fn cmul(ar: f64, ai: f64, br: f64, bi: f64) -> (f64, f64) {
-	(ar * br - ai * bi, ar * bi + ai * br)
-}
-
-#[inline]
-fn cdiv(ar: f64, ai: f64, br: f64, bi: f64) -> (f64, f64) {
-	let d = br * br + bi * bi;
-	if d < 1e-30 {
-		return (0.0, 0.0);
-	}
-	((ar * br + ai * bi) / d, (ai * br - ar * bi) / d)
-}
-
-/// In-place real Cholesky: lower triangle of `a` becomes \(L\) with \(A = L L^T\).
-fn chol_factor_real(a: &mut [f64], n: usize) {
-	for i in 0..n {
-		for j in 0..=i {
-			let mut sum = a[i * n + j];
-			for k in 0..j {
-				sum -= a[i * n + k] * a[j * n + k];
-			}
-			if i == j {
-				a[i * n + i] = sum.max(PIVOT_FLOOR).sqrt();
-			} else {
-				a[i * n + j] = sum / a[j * n + j];
-			}
-		}
-	}
-}
-
-fn chol_solve_real(l: &[f64], n: usize, b: &mut [f64]) {
-	for i in 0..n {
-		let mut s = b[i];
-		for k in 0..i {
-			s -= l[i * n + k] * b[k];
-		}
-		b[i] = s / l[i * n + i];
-	}
-	for i in (0..n).rev() {
-		let mut s = b[i];
-		for k in i + 1..n {
-			s -= l[k * n + i] * b[k];
-		}
-		b[i] = s / l[i * n + i];
-	}
-}
-
-/// Diagonal of \(A^{-1}\) for real SPD `a` (destroyed).
-fn inverse_diag_spd(a: &mut [f64], n: usize) -> Vec<f64> {
-	chol_factor_real(a, n);
-	let mut ydiag = vec![0.0f64; n];
-	let mut rhs = vec![0.0f64; n];
-	for j in 0..n {
-		rhs.fill(0.0);
-		rhs[j] = 1.0;
-		chol_solve_real(a, n, &mut rhs);
-		ydiag[j] = rhs[j];
-	}
-	ydiag
-}
-
-fn chol_factor_herm(re: &mut [f64], im: &mut [f64], n: usize) {
-	for i in 0..n {
-		for j in 0..=i {
-			let mut sum_re = re[i * n + j];
-			let mut sum_im = im[i * n + j];
-			for k in 0..j {
-				let lir = re[i * n + k];
-				let lii = im[i * n + k];
-				let ljr = re[j * n + k];
-				let lji = im[j * n + k];
-				sum_re -= lir * ljr + lii * lji;
-				sum_im -= lii * ljr - lir * lji;
-			}
-			if i == j {
-				re[i * n + i] = sum_re.max(PIVOT_FLOOR).sqrt();
-				im[i * n + i] = 0.0;
-			} else {
-				let d = re[j * n + j];
-				re[i * n + j] = sum_re / d;
-				im[i * n + j] = sum_im / d;
-			}
-		}
-	}
-}
-
-fn chol_solve_herm(l_re: &[f64], l_im: &[f64], n: usize, b_re: &mut [f64], b_im: &mut [f64]) {
-	for i in 0..n {
-		let mut sr = b_re[i];
-		let mut si = b_im[i];
-		for k in 0..i {
-			let lr = l_re[i * n + k];
-			let li = l_im[i * n + k];
-			sr -= lr * b_re[k] - li * b_im[k];
-			si -= lr * b_im[k] + li * b_re[k];
-		}
-		let d = l_re[i * n + i];
-		b_re[i] = sr / d;
-		b_im[i] = si / d;
-	}
-	for i in (0..n).rev() {
-		let mut sr = b_re[i];
-		let mut si = b_im[i];
-		for k in i + 1..n {
-			let lr = l_re[k * n + i];
-			let li = l_im[k * n + i];
-			sr -= lr * b_re[k] + li * b_im[k];
-			si -= lr * b_im[k] - li * b_re[k];
-		}
-		let d = l_re[i * n + i];
-		b_re[i] = sr / d;
-		b_im[i] = si / d;
-	}
-}
-
-/// Complex LU with partial pivoting. `re`/`im` become \(L+U\) (unit \(L\) diagonal).
-/// `piv[k]` is the row swapped with \(k\) at step \(k\).
-fn lu_factor_cplx(re: &mut [f64], im: &mut [f64], n: usize, piv: &mut [usize]) {
-	for i in 0..n {
-		piv[i] = i;
-	}
-	for k in 0..n {
-		let mut p = k;
-		let mut max_abs = re[k * n + k].hypot(im[k * n + k]);
-		for i in (k + 1)..n {
-			let a = re[i * n + k].hypot(im[i * n + k]);
-			if a > max_abs {
-				max_abs = a;
-				p = i;
-			}
-		}
-		piv[k] = p;
-		if p != k {
-			for j in 0..n {
-				re.swap(k * n + j, p * n + j);
-				im.swap(k * n + j, p * n + j);
-			}
-		}
-		let d_re = re[k * n + k];
-		let d_im = im[k * n + k];
-		if d_re.hypot(d_im) < PIVOT_FLOOR {
-			re[k * n + k] = PIVOT_FLOOR;
-			im[k * n + k] = 0.0;
-		}
-		let pk_re = re[k * n + k];
-		let pk_im = im[k * n + k];
-		for i in (k + 1)..n {
-			let (mr, mi) = cdiv(re[i * n + k], im[i * n + k], pk_re, pk_im);
-			re[i * n + k] = mr;
-			im[i * n + k] = mi;
-			for j in (k + 1)..n {
-				let (pr, pi) = cmul(mr, mi, re[k * n + j], im[k * n + j]);
-				re[i * n + j] -= pr;
-				im[i * n + j] -= pi;
-			}
-		}
-	}
-}
-
-fn lu_solve_cplx(
-	lu_re: &[f64],
-	lu_im: &[f64],
-	n: usize,
-	piv: &[usize],
-	b_re: &mut [f64],
-	b_im: &mut [f64],
-) {
-	for k in 0..n {
-		let p = piv[k];
-		if p != k {
-			b_re.swap(k, p);
-			b_im.swap(k, p);
-		}
-	}
-	for i in 0..n {
-		let mut sr = b_re[i];
-		let mut si = b_im[i];
-		for j in 0..i {
-			let (pr, pi) = cmul(lu_re[i * n + j], lu_im[i * n + j], b_re[j], b_im[j]);
-			sr -= pr;
-			si -= pi;
-		}
-		b_re[i] = sr;
-		b_im[i] = si;
-	}
-	for i in (0..n).rev() {
-		let mut sr = b_re[i];
-		let mut si = b_im[i];
-		for j in (i + 1)..n {
-			let (pr, pi) = cmul(lu_re[i * n + j], lu_im[i * n + j], b_re[j], b_im[j]);
-			sr -= pr;
-			si -= pi;
-		}
-		let (xr, xi) = cdiv(sr, si, lu_re[i * n + i], lu_im[i * n + i]);
-		b_re[i] = xr;
-		b_im[i] = xi;
-	}
-}
-
-fn inverse_diag_cplx(re: &mut [f64], im: &mut [f64], n: usize) -> (Vec<f64>, Vec<f64>) {
-	let mut piv = vec![0usize; n];
-	lu_factor_cplx(re, im, n, &mut piv);
-	let mut y_re = vec![0.0f64; n];
-	let mut y_im = vec![0.0f64; n];
-	let mut br = vec![0.0f64; n];
-	let mut bi = vec![0.0f64; n];
-	for j in 0..n {
-		br.fill(0.0);
-		bi.fill(0.0);
-		br[j] = 1.0;
-		lu_solve_cplx(re, im, n, &piv, &mut br, &mut bi);
-		y_re[j] = br[j];
-		y_im[j] = bi[j];
-	}
-	(y_re, y_im)
-}
-
 /// \(S = D^{-1/2}(R-D)\,\mathrm{solve}(R+D, D^{1/2})\),
 /// \(T = 2\sqrt{Z_\mathrm{ref}}\,\mathrm{solve}(R+D, D^{1/2})\).
 fn form_s_and_t(
@@ -823,6 +609,17 @@ fn form_s_and_t(
 	z0: &[f64],
 	n: usize,
 	z_ref: f64,
+) -> StResult {
+	form_s_and_t_with(r_re, r_im, z0, n, z_ref, la::solve_herm_multi)
+}
+
+fn form_s_and_t_with(
+	r_re: &[f64],
+	r_im: &[f64],
+	z0: &[f64],
+	n: usize,
+	z_ref: f64,
+	solve: fn(&[f64], &[f64], usize, &[f64], &[f64]) -> (Vec<f64>, Vec<f64>),
 ) -> StResult {
 	let nn = n * n;
 	let mut sqrtz = vec![0.0f64; n];
@@ -836,23 +633,16 @@ fn form_s_and_t(
 		l_re[p * n + p] += z0[p];
 		l_im[p * n + p] = 0.0;
 	}
-	chol_factor_herm(&mut l_re, &mut l_im, n);
-
-	let mut x_re = vec![0.0f64; nn];
-	let mut x_im = vec![0.0f64; nn];
-	let mut ydiag_re = vec![0.0f64; n];
-	let mut br = vec![0.0f64; n];
-	let mut bi = vec![0.0f64; n];
+	let mut b_re = vec![0.0f64; nn];
+	let b_im = vec![0.0f64; nn];
 	for j in 0..n {
-		br.fill(0.0);
-		bi.fill(0.0);
-		br[j] = sqrtz[j];
-		chol_solve_herm(&l_re, &l_im, n, &mut br, &mut bi);
-		ydiag_re[j] = br[j] / sqrtz[j];
-		for i in 0..n {
-			x_re[i * n + j] = br[i];
-			x_im[i * n + j] = bi[i];
-		}
+		b_re[j * n + j] = sqrtz[j];
+	}
+	let (x_re, x_im) = solve(&l_re, &l_im, n, &b_re, &b_im);
+
+	let mut ydiag_re = vec![0.0f64; n];
+	for j in 0..n {
+		ydiag_re[j] = x_re[j * n + j] / sqrtz[j];
 	}
 
 	let t_scale = 2.0 * z_ref.max(EPS_Z).sqrt();
@@ -869,23 +659,14 @@ fn form_s_and_t(
 		rmd_re[p * n + p] -= z0[p];
 	}
 
+	let (prod_re, prod_im) = la::matmul_cplx(&rmd_re, &rmd_im, &x_re, &x_im, n);
 	let mut s_re = vec![0.0f64; nn];
 	let mut s_im = vec![0.0f64; nn];
 	for i in 0..n {
 		let inv_sqrt = 1.0 / sqrtz[i];
 		for j in 0..n {
-			let mut re = 0.0;
-			let mut im = 0.0;
-			for k in 0..n {
-				let ar = rmd_re[i * n + k];
-				let ai = rmd_im[i * n + k];
-				let xr = x_re[k * n + j];
-				let xi = x_im[k * n + j];
-				re += ar * xr - ai * xi;
-				im += ar * xi + ai * xr;
-			}
-			s_re[i * n + j] = re * inv_sqrt;
-			s_im[i * n + j] = im * inv_sqrt;
+			s_re[i * n + j] = prod_re[i * n + j] * inv_sqrt;
+			s_im[i * n + j] = prod_im[i * n + j] * inv_sqrt;
 		}
 	}
 	StResult {
@@ -908,38 +689,42 @@ fn form_s_and_t_kurokawa(
 	n: usize,
 	z_ref: f64,
 ) -> StResult {
+	form_s_and_t_kurokawa_with(z_re, z_im, z0_re, z0_im, n, z_ref, la::solve_cplx_multi)
+}
+
+fn form_s_and_t_kurokawa_with(
+	z_re: &[f64],
+	z_im: &[f64],
+	z0_re: &[f64],
+	z0_im: &[f64],
+	n: usize,
+	z_ref: f64,
+	solve: fn(&[f64], &[f64], usize, &[f64], &[f64]) -> (Vec<f64>, Vec<f64>),
+) -> StResult {
 	let nn = n * n;
 	let mut g = vec![0.0f64; n];
 	for p in 0..n {
 		g[p] = z0_re[p].max(EPS_Z).sqrt();
 	}
 
-	let mut lu_re = z_re.to_vec();
-	let mut lu_im = z_im.to_vec();
+	let mut a_re = z_re.to_vec();
+	let mut a_im = z_im.to_vec();
 	for p in 0..n {
-		lu_re[p * n + p] += z0_re[p];
-		lu_im[p * n + p] += z0_im[p];
+		a_re[p * n + p] += z0_re[p];
+		a_im[p * n + p] += z0_im[p];
 	}
-	let mut piv = vec![0usize; n];
-	lu_factor_cplx(&mut lu_re, &mut lu_im, n, &mut piv);
+	let mut b_re = vec![0.0f64; nn];
+	let b_im = vec![0.0f64; nn];
+	for j in 0..n {
+		b_re[j * n + j] = g[j];
+	}
+	let (w_re, w_im) = solve(&a_re, &a_im, n, &b_re, &b_im);
 
-	let mut w_re = vec![0.0f64; nn];
-	let mut w_im = vec![0.0f64; nn];
 	let mut ydiag_re = vec![0.0f64; n];
 	let mut ydiag_im = vec![0.0f64; n];
-	let mut br = vec![0.0f64; n];
-	let mut bi = vec![0.0f64; n];
 	for j in 0..n {
-		br.fill(0.0);
-		bi.fill(0.0);
-		br[j] = g[j];
-		lu_solve_cplx(&lu_re, &lu_im, n, &piv, &mut br, &mut bi);
-		ydiag_re[j] = br[j] / g[j];
-		ydiag_im[j] = bi[j] / g[j];
-		for i in 0..n {
-			w_re[i * n + j] = br[i];
-			w_im[i * n + j] = bi[i];
-		}
+		ydiag_re[j] = w_re[j * n + j] / g[j];
+		ydiag_im[j] = w_im[j * n + j] / g[j];
 	}
 
 	let t_scale = 2.0 * z_ref.max(EPS_Z).sqrt();
@@ -958,23 +743,14 @@ fn form_s_and_t_kurokawa(
 		zmd_im[p * n + p] += z0_im[p];
 	}
 
+	let (prod_re, prod_im) = la::matmul_cplx(&zmd_re, &zmd_im, &w_re, &w_im, n);
 	let mut s_re = vec![0.0f64; nn];
 	let mut s_im = vec![0.0f64; nn];
 	for i in 0..n {
 		let inv_g = 1.0 / g[i];
 		for j in 0..n {
-			let mut re = 0.0;
-			let mut im = 0.0;
-			for k in 0..n {
-				let ar = zmd_re[i * n + k];
-				let ai = zmd_im[i * n + k];
-				let wr = w_re[k * n + j];
-				let wi = w_im[k * n + j];
-				re += ar * wr - ai * wi;
-				im += ar * wi + ai * wr;
-			}
-			s_re[i * n + j] = re * inv_g;
-			s_im[i * n + j] = im * inv_g;
+			s_re[i * n + j] = prod_re[i * n + j] * inv_g;
+			s_im[i * n + j] = prod_im[i * n + j] * inv_g;
 		}
 	}
 	StResult {
@@ -1055,69 +831,6 @@ mod tests {
 				close(m.r_im[q * n + p], want, 1e-9, "X_qp");
 			}
 		}
-	}
-
-	#[test]
-	fn chol_solves_spd_identity() {
-		let n = 3;
-		#[rustfmt::skip]
-		let a0 = [
-			4.0, 1.0, 0.5,
-			1.0, 3.0, 0.2,
-			0.5, 0.2, 2.0,
-		];
-		let mut l = a0.to_vec();
-		chol_factor_real(&mut l, n);
-		for j in 0..n {
-			let mut b = vec![0.0; n];
-			b[j] = 1.0;
-			chol_solve_real(&l, n, &mut b);
-			let mut ax = vec![0.0; n];
-			for i in 0..n {
-				for k in 0..n {
-					ax[i] += a0[i * n + k] * b[k];
-				}
-			}
-			for i in 0..n {
-				let expect = if i == j { 1.0 } else { 0.0 };
-				close(ax[i], expect, 1e-12, "A x = e_j");
-			}
-		}
-	}
-
-	#[test]
-	fn lu_solves_complex() {
-		let n = 2;
-		#[rustfmt::skip]
-		let a_re = [
-			1.0, 2.0,
-			3.0, 4.0,
-		];
-		#[rustfmt::skip]
-		let a_im = [
-			1.0, 0.0,
-			0.0, -1.0,
-		];
-		let mut lu_re = a_re.to_vec();
-		let mut lu_im = a_im.to_vec();
-		let mut piv = vec![0usize; n];
-		lu_factor_cplx(&mut lu_re, &mut lu_im, n, &mut piv);
-		let mut br = vec![1.0, 0.0];
-		let mut bi = vec![0.0, 0.0];
-		lu_solve_cplx(&lu_re, &lu_im, n, &piv, &mut br, &mut bi);
-		let mut ax_re = [0.0; 2];
-		let mut ax_im = [0.0; 2];
-		for i in 0..n {
-			for k in 0..n {
-				let (pr, pi) = cmul(a_re[i * n + k], a_im[i * n + k], br[k], bi[k]);
-				ax_re[i] += pr;
-				ax_im[i] += pi;
-			}
-		}
-		close(ax_re[0], 1.0, 1e-12, "lu Ax re0");
-		close(ax_re[1], 0.0, 1e-12, "lu Ax re1");
-		close(ax_im[0], 0.0, 1e-12, "lu Ax im0");
-		close(ax_im[1], 0.0, 1e-12, "lu Ax im1");
 	}
 
 	#[test]
@@ -1258,32 +971,6 @@ mod tests {
 		close(w_re[1], m.t_re[2], 1e-12, "T col0 row1");
 		close(w_im[0], 0.0, 1e-12, "w im");
 		close(w_im[1], 0.0, 1e-12, "w im");
-	}
-
-	#[test]
-	fn herm_chol_agrees_with_real_on_real_matrix() {
-		let n = 2;
-		#[rustfmt::skip]
-		let a = [
-			4.0, 1.0,
-			1.0, 3.0,
-		];
-		let mut l_re = a.to_vec();
-		let mut l_im = vec![0.0; 4];
-		chol_factor_herm(&mut l_re, &mut l_im, n);
-		let mut br = vec![1.0, 0.0];
-		let mut bi = vec![0.0, 0.0];
-		chol_solve_herm(&l_re, &l_im, n, &mut br, &mut bi);
-		let mut ax = [0.0; 2];
-		for i in 0..2 {
-			for k in 0..2 {
-				ax[i] += a[i * 2 + k] * br[k];
-			}
-		}
-		close(ax[0], 1.0, 1e-12, "herm Ax0");
-		close(ax[1], 0.0, 1e-12, "herm Ax1");
-		close(bi[0], 0.0, 1e-12, "herm im0");
-		close(bi[1], 0.0, 1e-12, "herm im1");
 	}
 
 	#[test]
@@ -1687,5 +1374,228 @@ mod tests {
 			&p_re, &p_im, 1, Z_REF, &[0.0], &[0.0], 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0,
 		);
 		close(m.z0[0], Z_REF, 0.0, "z0 clamp");
+	}
+
+	fn max_abs_diff(a: &[f64], b: &[f64]) -> f64 {
+		a.iter()
+			.zip(b)
+			.map(|(x, y)| (x - y).abs())
+			.fold(0.0, f64::max)
+	}
+
+	fn assert_st_close(faer: &StResult, legacy: &StResult, tol: f64, label: &str) {
+		let ds = max_abs_diff(&faer.s_re, &legacy.s_re).max(max_abs_diff(&faer.s_im, &legacy.s_im));
+		let dt = max_abs_diff(&faer.t_re, &legacy.t_re).max(max_abs_diff(&faer.t_im, &legacy.t_im));
+		assert!(ds <= tol, "{label} max |S| diff {ds} > {tol}");
+		assert!(dt <= tol, "{label} max |T| diff {dt} > {tol}");
+	}
+
+	fn rect_xy(nx: usize, ny: usize, dx: f32, dy: f32) -> (Vec<f32>, Vec<f32>) {
+		let n = nx * ny;
+		let mut x = vec![0.0f32; n];
+		let mut y = vec![0.0f32; n];
+		let mut k = 0;
+		for ix in 0..nx {
+			for iy in 0..ny {
+				x[k] = dx * ix as f32;
+				y[k] = dy * iy as f32;
+				k += 1;
+			}
+		}
+		(x, y)
+	}
+
+	fn green_z(nx: usize, ny: usize) -> (Vec<f64>, Vec<f64>, usize) {
+		let (x, y) = rect_xy(nx, ny, 0.5, 0.5);
+		let mut s = crate::prad::PradState::new();
+		s.fill_green_pec_dipole_z(&x, &y, 1.0, 0.25, 0.1, 0.001);
+		(s.r_re, s.r_im, s.n)
+	}
+
+	#[test]
+	fn faer_agrees_with_legacy_small_herm() {
+		let p_re = [0.5f32, 0.125, 0.125, 0.5];
+		let n = 2;
+		let scale = 2.0 * Z_REF;
+		let r_re: Vec<f64> = p_re.iter().map(|v| scale * *v as f64).collect();
+		let r_im = vec![0.0f64; 4];
+		let z0 = vec![r_re[0].max(EPS_Z), r_re[3].max(EPS_Z)];
+		let faer = form_s_and_t_with(&r_re, &r_im, &z0, n, Z_REF, crate::linalg::solve_herm_multi);
+		let legacy = form_s_and_t_with(
+			&r_re,
+			&r_im,
+			&z0,
+			n,
+			Z_REF,
+			crate::legacy_linalg::solve_herm_multi,
+		);
+		assert_st_close(&faer, &legacy, 1e-9, "herm 2-port");
+		let mut a = r_re.clone();
+		for p in 0..n {
+			a[p * n + p] += z0[p];
+		}
+		let fy = crate::linalg::inverse_diag_spd(&a, n);
+		let ly = crate::legacy_linalg::inverse_diag_spd(&a, n);
+		assert!(max_abs_diff(&fy, &ly) <= 1e-9, "inverse_diag_spd");
+	}
+
+	#[test]
+	fn faer_agrees_with_legacy_small_cplx() {
+		let z_re = [10.0, 1.0, 1.0, 12.0];
+		let z_im = [3.0, 0.5, 0.5, 4.0];
+		let n = 2;
+		let z0_re = [10.0, 10.0];
+		let z0_im = [0.0, 0.0];
+		let faer = form_s_and_t_kurokawa_with(
+			&z_re,
+			&z_im,
+			&z0_re,
+			&z0_im,
+			n,
+			Z_REF,
+			crate::linalg::solve_cplx_multi,
+		);
+		let legacy = form_s_and_t_kurokawa_with(
+			&z_re,
+			&z_im,
+			&z0_re,
+			&z0_im,
+			n,
+			Z_REF,
+			crate::legacy_linalg::solve_cplx_multi,
+		);
+		assert_st_close(&faer, &legacy, 1e-9, "kurokawa 2-port");
+		let mut a_re = z_re.to_vec();
+		let mut a_im = z_im.to_vec();
+		for p in 0..n {
+			a_re[p * n + p] += z0_re[p];
+			a_im[p * n + p] += z0_im[p];
+		}
+		let (fy_re, fy_im) = crate::linalg::inverse_diag_cplx(&a_re, &a_im, n);
+		let (ly_re, ly_im) = crate::legacy_linalg::inverse_diag_cplx(&a_re, &a_im, n);
+		assert!(
+			max_abs_diff(&fy_re, &ly_re).max(max_abs_diff(&fy_im, &ly_im)) <= 1e-9,
+			"inverse_diag_cplx"
+		);
+	}
+
+	#[test]
+	fn faer_agrees_with_legacy_green_8x8() {
+		let (z_re, z_im, n) = green_z(8, 8);
+		let z0_re = vec![Z_REF; n];
+		let z0_im = vec![0.0; n];
+		let faer = form_s_and_t_kurokawa_with(
+			&z_re,
+			&z_im,
+			&z0_re,
+			&z0_im,
+			n,
+			Z_REF,
+			crate::linalg::solve_cplx_multi,
+		);
+		let legacy = form_s_and_t_kurokawa_with(
+			&z_re,
+			&z_im,
+			&z0_re,
+			&z0_im,
+			n,
+			Z_REF,
+			crate::legacy_linalg::solve_cplx_multi,
+		);
+		assert_st_close(&faer, &legacy, 1e-9, "kurokawa 8x8 Green");
+		let m = MatchedS::from_z(&z_re, &z_im, n, Z_REF, Z_REF, 0.0);
+		let ds = max_abs_diff(&m.s_re, &faer.s_re).max(max_abs_diff(&m.s_im, &faer.s_im));
+		let dt = max_abs_diff(&m.t_re, &faer.t_re).max(max_abs_diff(&m.t_im, &faer.t_im));
+		assert!(ds <= 1e-9, "from_z S vs faer {ds}");
+		assert!(dt <= 1e-9, "from_z T vs faer {dt}");
+	}
+
+	fn median_ms(mut samples: Vec<f64>) -> f64 {
+		samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+		samples[samples.len() / 2]
+	}
+
+	fn time_ms(runs: usize, mut f: impl FnMut()) -> f64 {
+		f();
+		let mut samples = Vec::with_capacity(runs);
+		for _ in 0..runs {
+			let t0 = std::time::Instant::now();
+			f();
+			samples.push(t0.elapsed().as_secs_f64() * 1000.0);
+		}
+		median_ms(samples)
+	}
+
+	#[test]
+	#[ignore]
+	fn bench_linalg_32x32_legacy_vs_faer() {
+		let (z_re, z_im, n) = green_z(32, 32);
+		let z0_re = vec![Z_REF; n];
+		let z0_im = vec![0.0; n];
+		let faer = form_s_and_t_kurokawa_with(
+			&z_re,
+			&z_im,
+			&z0_re,
+			&z0_im,
+			n,
+			Z_REF,
+			crate::linalg::solve_cplx_multi,
+		);
+		let legacy = form_s_and_t_kurokawa_with(
+			&z_re,
+			&z_im,
+			&z0_re,
+			&z0_im,
+			n,
+			Z_REF,
+			crate::legacy_linalg::solve_cplx_multi,
+		);
+		assert_st_close(&faer, &legacy, 1e-8, "kurokawa 32x32 Green");
+
+		let mut a_re = z_re.clone();
+		let a_im = z_im.clone();
+		for p in 0..n {
+			a_re[p * n + p] += Z_REF;
+		}
+		let g = Z_REF.max(EPS_Z).sqrt();
+		let mut b_re = vec![0.0f64; n * n];
+		let b_im = vec![0.0f64; n * n];
+		for j in 0..n {
+			b_re[j * n + j] = g;
+		}
+
+		let legacy_solve_ms = time_ms(3, || {
+			let _ = crate::legacy_linalg::solve_cplx_multi(&a_re, &a_im, n, &b_re, &b_im);
+		});
+		let faer_solve_ms = time_ms(3, || {
+			let _ = crate::linalg::solve_cplx_multi(&a_re, &a_im, n, &b_re, &b_im);
+		});
+		let legacy_full_ms = time_ms(3, || {
+			let _ = form_s_and_t_kurokawa_with(
+				&z_re,
+				&z_im,
+				&z0_re,
+				&z0_im,
+				n,
+				Z_REF,
+				crate::legacy_linalg::solve_cplx_multi,
+			);
+		});
+		let faer_full_ms = time_ms(3, || {
+			let _ = form_s_and_t_kurokawa_with(
+				&z_re,
+				&z_im,
+				&z0_re,
+				&z0_im,
+				n,
+				Z_REF,
+				crate::linalg::solve_cplx_multi,
+			);
+		});
+		println!(
+			"\nN {n}\n  solve   legacy_ms {legacy_solve_ms:.1} | faer_ms {faer_solve_ms:.1} | speedup {solve_sp:.2}x\n  full S,T legacy_ms {legacy_full_ms:.1} | faer_ms {faer_full_ms:.1} | speedup {full_sp:.2}x",
+			solve_sp = legacy_solve_ms / faer_solve_ms.max(1e-9),
+			full_sp = legacy_full_ms / faer_full_ms.max(1e-9),
+		);
 	}
 }

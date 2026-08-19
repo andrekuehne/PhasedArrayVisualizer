@@ -226,6 +226,27 @@ Suggested default orders vs electrical size were **not** used in the bench; 32/6
 
 ---
 
+## Matched \(S,T\) solvers (faer)
+
+Production matching uses [faer](https://crates.io/crates/faer) 0.24 in [`wasm/src/linalg.rs`](../wasm/src/linalg.rs): complex partial-pivot LU, Hermitian Cholesky, and complex GEMM, all `Par::Seq` (no rayon; WASM-safe). The GUI (`compute_matched_basis` in [`js/index-scenes.js`](../js/index-scenes.js)) always calls `form_matched_s` / `form_matched_s_propagation` / `form_green_pec_dipole` on that kernel. Textbook LU/Cholesky stays in [`wasm/src/legacy_linalg.rs`](../wasm/src/legacy_linalg.rs) for parity tests only.
+
+32×32 Green PEC, \(N=1024\), unique-lag \(Z\) then Kurokawa `from_z` (same defaults as [`tests/green-bench.test.js`](../tests/green-bench.test.js)):
+
+| backend | native LU | WASM `from_z` | SIMD `.wasm` |
+| --- | --- | --- | --- |
+| textbook | 1798 ms | 16.8 s | 152 KB |
+| faer | 258 ms (~7×) | 1.78 s (~9.5×) | 488 KB |
+
+Native A/B (includes 32×32 S/T parity):
+
+```powershell
+cargo test --manifest-path wasm/Cargo.toml --release --lib bench_linalg_32x32 -- --ignored --nocapture
+```
+
+WASM A/B: `node --test tests/green-bench.test.js` after `./wasm/build.ps1`. Textbook comparison is the native ignored bench above (both solvers in one binary).
+
+---
+
 ## Not done (continue here)
 
 1. **\(F^\mathrm{emb}\) on a quadrature grid** — pattern mixing \(F^\mathrm{emb}=T^T F^\mathrm{iso}\) for power-balance checks. The GUI uses \(w=Ta\) into the existing AF kernel instead. `compute_j0` never builds \(A\); use `fill_isolated` if fields on the hemisphere are needed.

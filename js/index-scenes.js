@@ -277,6 +277,7 @@ export class SceneControlPhasedArray extends SceneControl{
 			this.request_recompute();
 		}
 	}
+	/** Fill S, T, Z from the WASM kernel (faer LU/Cholesky). Isolated skips this. */
 	compute_matched_basis(freq){
 		const pa = this.pa;
 		const ep = pa.elementPattern;
@@ -1125,8 +1126,8 @@ export class SceneControlElement extends SceneControlWithSelectorAutoBuild{
 		const note = document.createElement('div');
 		note.className = 'form-note';
 		note.id = parent.prepend + '-element-green-note';
-		note.textContent = 'S,T from the PEC Green function. First build can take seconds near 32×32.';
-		note.title = 'Unique-lag PEC kernel fills Z; Kurokawa S,T from that Z at the common real Z0. The 32×32 LU can take seconds.';
+		note.textContent = 'S,T from the PEC Green function. First build is about 2 s at 32×32.';
+		note.title = 'Unique-lag PEC kernel fills Z; Kurokawa S,T from that Z at the common real Z0. The 32×32 LU is about 2 s in WASM.';
 		note.style.display = 'none';
 		host.appendChild(note);
 		this.greenNote = note;

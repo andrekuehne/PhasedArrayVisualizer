@@ -8,6 +8,10 @@ mod prad;
 mod quadrature;
 mod sincos;
 
+mod linalg;
+#[allow(dead_code)]
+mod legacy_linalg;
+
 use kernel::FarfieldState;
 use prad::PradState;
 use wasm_bindgen::prelude::*;
