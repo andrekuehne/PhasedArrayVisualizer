@@ -207,6 +207,7 @@ impl RadiatedPowerKernel {
 		a: f32,
 		z_ref: f32,
 		z_common_re: f32,
+		x_self: f64,
 	) {
 		self.state.form_green_pec_dipole(
 			x,
@@ -217,6 +218,7 @@ impl RadiatedPowerKernel {
 			a,
 			z_ref,
 			z_common_re,
+			x_self,
 		);
 	}
 
@@ -233,8 +235,8 @@ impl RadiatedPowerKernel {
 			.fill_green_pec_dipole_z(x, y, frequency_scale, h, ell, a);
 	}
 
-	pub fn form_from_z(&mut self, z_ref: f32, z_common_re: f32) {
-		self.state.form_from_z(z_ref, z_common_re);
+	pub fn form_from_z(&mut self, z_ref: f32, z_common_re: f32, x_self: f64) {
+		self.state.form_from_z(z_ref, z_common_re, x_self);
 	}
 
 	pub fn take_z0(&self) -> Vec<f64> {

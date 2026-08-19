@@ -67,6 +67,7 @@ export const __wbg_set_patternmetrics_squint_ax1_deg: (a: number, b: number) => 
 export const __wbg_set_patternmetrics_squint_ax2_deg: (a: number, b: number) => void;
 export const __wbg_set_patternmetrics_squint_deg: (a: number, b: number) => void;
 export const apply_element_pattern: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any, i: number, j: number) => number;
+export const apply_green_pec_pattern: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any, i: number, j: number, k: number) => number;
 export const element_exponent_from_peak_dbi: (a: number) => number;
 export const extract_pattern_metrics: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
 export const farfieldkernel_accumulate_tile: (a: number, b: number, c: number, d: number, e: number) => void;
@@ -80,9 +81,9 @@ export const radiatedpowerkernel_compute_j0: (a: number, b: number, c: number, d
 export const radiatedpowerkernel_fill_green_pec_dipole_z: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
 export const radiatedpowerkernel_fill_isolated: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
 export const radiatedpowerkernel_fill_isolated_range: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
-export const radiatedpowerkernel_form_from_z: (a: number, b: number, c: number) => void;
+export const radiatedpowerkernel_form_from_z: (a: number, b: number, c: number, d: number) => void;
 export const radiatedpowerkernel_form_gram: (a: number) => void;
-export const radiatedpowerkernel_form_green_pec_dipole: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => void;
+export const radiatedpowerkernel_form_green_pec_dipole: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => void;
 export const radiatedpowerkernel_form_matched_s: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => void;
 export const radiatedpowerkernel_form_matched_s_propagation: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => void;
 export const radiatedpowerkernel_match_iterations: (a: number) => number;
@@ -101,6 +102,7 @@ export const radiatedpowerkernel_take_z0: (a: number) => [number, number];
 export const radiatedpowerkernel_take_z0_im: (a: number) => [number, number];
 export const radiatedpowerkernel_take_z_im: (a: number) => [number, number];
 export const radiatedpowerkernel_take_z_re: (a: number) => [number, number];
+export const z_self_pec_dipole: (a: number, b: number, c: number, d: number) => [number, number];
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;

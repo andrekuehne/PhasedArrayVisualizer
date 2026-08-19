@@ -85,11 +85,11 @@ describe('Green PEC unique-lag Z timings', () => {
 		for (const c of CASES){
 			const {x, y} = rectArray(c.nx, c.ny, 0.5, 0.5);
 			k.fill_green_pec_dipole_z(x, y, 1, H, ELL, A);
-			k.form_from_z(Z_REF, Z_REF);
+			k.form_from_z(Z_REF, Z_REF, 0);
 			const t0 = performance.now();
 			k.fill_green_pec_dipole_z(x, y, 1, H, ELL, A);
 			const t1 = performance.now();
-			k.form_from_z(Z_REF, Z_REF);
+			k.form_from_z(Z_REF, Z_REF, 0);
 			const t2 = performance.now();
 			const fill = t1 - t0;
 			const lu = t2 - t1;

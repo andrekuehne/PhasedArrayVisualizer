@@ -157,7 +157,6 @@ pub fn z_pair_pec_dipole(
 
 /// Isolated space-wave \((E_\theta,E_\phi)\) of a unit-current short dipole plus
 /// PEC image. \(e^{-jkr}/r\) stripped. Zero in the back hemisphere \(\theta>\pi/2\).
-#[allow(dead_code)]
 pub fn f_iso_pec_dipole(
 	theta: f64,
 	phi: f64,
@@ -185,7 +184,6 @@ pub fn f_iso_pec_dipole(
 }
 
 /// \(\lvert F\rvert^2=\lvert E_\theta\rvert^2+\lvert E_\phi\rvert^2\).
-#[allow(dead_code)]
 pub fn f_iso_pec_dipole_power(theta: f64, phi: f64, h: f64, ell: f64, freq_scale: f64) -> f64 {
 	let (et_re, et_im, ep_re, ep_im) = f_iso_pec_dipole(theta, phi, h, ell, freq_scale);
 	et_re * et_re + et_im * et_im + ep_re * ep_re + ep_im * ep_im

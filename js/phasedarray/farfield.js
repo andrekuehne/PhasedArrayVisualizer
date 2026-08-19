@@ -1,6 +1,6 @@
 import {linspace} from "../util.js";
-import {PATTERN_COS_N} from "./element.js";
-import {applyElementPattern, extractPatternMetrics, getFarfieldKernel} from "../wasm/init.js";
+import {GREEN_PEC_DEFAULT_ELL, GREEN_PEC_DEFAULT_H, PATTERN_COS_N, PATTERN_GREEN_PEC} from "./element.js";
+import {applyElementPattern, applyGreenPecPattern, extractPatternMetrics, getFarfieldKernel} from "../wasm/init.js";
 import {farfieldPoolSize, runFarfieldJob} from "../wasm/farfield-pool.js";
 
 /**
@@ -120,6 +120,8 @@ export class FarfieldABC{
 			mag: mag,
 			elementKind: pa.elementPattern?.kind ?? 0,
 			elementN: pa.elementPattern?.n ?? 0,
+			elementH: pa.elementPattern?.h ?? GREEN_PEC_DEFAULT_H,
+			elementEll: pa.elementPattern?.ell ?? GREEN_PEC_DEFAULT_ELL,
 		}
 	}
 	/**
@@ -144,8 +146,22 @@ export class FarfieldABC{
 	apply_element_pattern(domain, ax1, ax2, pars){
 		if (this._totalFlat == null) return;
 		const kind = Number(pars.elementKind) || 0;
-		const n = Number(pars.elementN) || 0;
+		if (kind === PATTERN_GREEN_PEC){
+			const h = Number(pars.elementH);
+			const ell = Number(pars.elementEll);
+			this.maxValue = applyGreenPecPattern(
+				domain,
+				as_f32(ax1),
+				as_f32(ax2),
+				this._totalFlat,
+				Number.isFinite(h) ? h : GREEN_PEC_DEFAULT_H,
+				Number.isFinite(ell) ? ell : GREEN_PEC_DEFAULT_ELL,
+				Number(this.frequencyScale)
+			);
+			return;
+		}
 		if (kind !== PATTERN_COS_N) return;
+		const n = Number(pars.elementN) || 0;
 		this.maxValue = applyElementPattern(
 			domain,
 			as_f32(ax1),

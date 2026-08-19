@@ -589,9 +589,10 @@ export class RadiatedPowerKernel {
     /**
      * @param {number} z_ref
      * @param {number} z_common_re
+     * @param {number} x_self
      */
-    form_from_z(z_ref, z_common_re) {
-        wasm.radiatedpowerkernel_form_from_z(this.__wbg_ptr, z_ref, z_common_re);
+    form_from_z(z_ref, z_common_re, x_self) {
+        wasm.radiatedpowerkernel_form_from_z(this.__wbg_ptr, z_ref, z_common_re, x_self);
     }
     form_gram() {
         wasm.radiatedpowerkernel_form_gram(this.__wbg_ptr);
@@ -605,13 +606,14 @@ export class RadiatedPowerKernel {
      * @param {number} a
      * @param {number} z_ref
      * @param {number} z_common_re
+     * @param {number} x_self
      */
-    form_green_pec_dipole(x, y, frequency_scale, h, ell, a, z_ref, z_common_re) {
+    form_green_pec_dipole(x, y, frequency_scale, h, ell, a, z_ref, z_common_re, x_self) {
         const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
         const len1 = WASM_VECTOR_LEN;
-        wasm.radiatedpowerkernel_form_green_pec_dipole(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, h, ell, a, z_ref, z_common_re);
+        wasm.radiatedpowerkernel_form_green_pec_dipole(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, h, ell, a, z_ref, z_common_re, x_self);
     }
     /**
      * @param {number} z_ref
@@ -808,6 +810,30 @@ export function apply_element_pattern(domain, ax1, ax2, total, kind, n) {
 }
 
 /**
+ * Multiply AF intensity `total` by PEC-dipole \(|F^\mathrm{iso}|^2\).
+ * Same grid as `apply_element_pattern`. Does not replace isotropic / cos^n.
+ * Invalid params leave `total` unchanged and still return a finite peak.
+ * @param {number} domain
+ * @param {Float32Array} ax1
+ * @param {Float32Array} ax2
+ * @param {Float32Array} total
+ * @param {number} h
+ * @param {number} ell
+ * @param {number} freq_scale
+ * @returns {number}
+ */
+export function apply_green_pec_pattern(domain, ax1, ax2, total, h, ell, freq_scale) {
+    const ptr0 = passArrayF32ToWasm0(ax1, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArrayF32ToWasm0(ax2, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    var ptr2 = passArrayF32ToWasm0(total, wasm.__wbindgen_malloc);
+    var len2 = WASM_VECTOR_LEN;
+    const ret = wasm.apply_green_pec_pattern(domain, ptr0, len0, ptr1, len1, ptr2, len2, total, h, ell, freq_scale);
+    return ret;
+}
+
+/**
  * Power-conserving cos^n exponent from peak element gain in dBi:
  * `n = 10^(element_gain/10)/2 - 1`, clamped at 0.
  * @param {number} gain_dbi
@@ -836,6 +862,21 @@ export function extract_pattern_metrics(domain, ax1, ax2, total, req_theta_rad, 
     const len2 = WASM_VECTOR_LEN;
     const ret = wasm.extract_pattern_metrics(domain, ptr0, len0, ptr1, len1, ptr2, len2, req_theta_rad, req_phi_rad);
     return PatternMetrics.__wrap(ret);
+}
+
+/**
+ * Isolated PEC-dipole self impedance \(Z_{11}\) in ohms: `[re, im]`.
+ * @param {number} h
+ * @param {number} ell
+ * @param {number} a
+ * @param {number} freq_scale
+ * @returns {Float64Array}
+ */
+export function z_self_pec_dipole(h, ell, a, freq_scale) {
+    const ret = wasm.z_self_pec_dipole(h, ell, a, freq_scale);
+    var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+    return v1;
 }
 function __wbg_get_imports() {
     const import0 = {

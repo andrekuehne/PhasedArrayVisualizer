@@ -1,5 +1,6 @@
 # Change Log
 ## 8/19/2026
+- Element has a PEC dipole option: a finite short dipole over infinite ground. Mutual Z and the isolated pattern come from the same Green function; Matching (Isolated / Per-port / Common Z0 / Propagation) is hidden in this mode. Controls are height h, length ℓ, radius a (wavelengths at f₀), a real port Z0 (default 50 Ω), and Self X (series reactance added to diag(Z), default 0). Match sets Z0 = Re(Z11) and Self X = −Im(Z11) of the isolated element. First S,T build can take seconds near 32×32 (LU); arrays larger than 1024 elements keep T = I and still apply the dipole pattern.
 - Matching is a single dropdown: Isolated, Per-port, Common Z0, and Propagation. Legacy URLs with Coupling=Matched map Per-port / Common Z0 from the old match-style param.
 - Propagation is a new matched model: mutual X from effective \(\varepsilon_x,\varepsilon_y\) phase and wavelength decay \(\alpha_\lambda\), always at a common real Z0. Per-port and Common Z0 keep the existing Mutual X / \(\alpha\) / \(\beta\) / A kernel.
 - Matched coupling now keeps a purely real port reference. Self X (Ω) is a common diagonal residual on Z (the old Im(Z0) control); Mutual X is the pairwise overlay. Per-port matches Re(Z_in) only, so leftover reactance stays in Z and in S_ii. Common Z0 is a single real z_c (default 45 Ω).

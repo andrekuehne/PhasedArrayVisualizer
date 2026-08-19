@@ -444,7 +444,8 @@ impl PradState {
 	}
 
 	/// [`MatchedS::from_z`] on the current Green \(Z\) (`r_re`/`r_im`).
-	pub fn form_from_z(&mut self, z_ref: f32, z_common_re: f32) {
+	/// \(x_\mathrm{self}\) is added to \(\mathrm{diag}(\Im Z)\).
+	pub fn form_from_z(&mut self, z_ref: f32, z_common_re: f32, x_self: f64) {
 		if self.n == 0 || self.r_re.len() != self.n * self.n {
 			self.clear_matched();
 			return;
@@ -455,6 +456,7 @@ impl PradState {
 			self.n,
 			z_ref as f64,
 			z_common_re as f64,
+			x_self,
 		);
 		self.apply_matched(m);
 	}
@@ -470,9 +472,10 @@ impl PradState {
 		a: f32,
 		z_ref: f32,
 		z_common_re: f32,
+		x_self: f64,
 	) {
 		self.fill_green_pec_dipole_z(x, y, frequency_scale, h, ell, a);
-		self.form_from_z(z_ref, z_common_re);
+		self.form_from_z(z_ref, z_common_re, x_self);
 	}
 }
 
@@ -1151,6 +1154,7 @@ mod tests {
 			a as f32,
 			Z_REF as f32,
 			0.0,
+			0.0,
 		);
 		assert_eq!(s.n_elements(), 1);
 		assert_eq!(s.p_re.len(), p_re_before);
@@ -1168,6 +1172,7 @@ mod tests {
 			a as f32,
 			Z_REF as f32,
 			zc as f32,
+			0.0,
 		);
 		close64(s.z0[0], zc as f32 as f64, 1e-6, "z0 = Re Z11");
 		assert_eq!(s.s_re.len(), 1);
@@ -1176,6 +1181,36 @@ mod tests {
 		assert!(s.t_re[0].is_finite() && s.t_im[0].is_finite());
 		let mag_s = s.s_re[0].hypot(s.s_im[0]);
 		assert!(mag_s > 1e-3, "|S11| leftover X {mag_s}");
+	}
+
+	#[test]
+	fn green_n1_cancelled_xself_is_open() {
+		use crate::green::{z_pair_pec_dipole, DEFAULT_A, DEFAULT_ELL, DEFAULT_H};
+		use crate::match_s::Z_REF;
+		let h = DEFAULT_H as f32 as f64;
+		let ell = DEFAULT_ELL as f32 as f64;
+		let a = DEFAULT_A as f32 as f64;
+		let (z_re, z_im) = z_pair_pec_dipole(0.0, 0.0, h, ell, a, 1.0);
+		let mut s = PradState::new();
+		s.form_green_pec_dipole(
+			&[0.0],
+			&[0.0],
+			1.0,
+			h as f32,
+			ell as f32,
+			a as f32,
+			Z_REF as f32,
+			z_re as f32,
+			-z_im,
+		);
+		close64(s.r_im[0], 0.0, 1e-12, "X11 cancelled");
+		close64(s.z0[0], z_re as f32 as f64, 1e-6, "z0 = Re Z11");
+		let mag_s = s.s_re[0].hypot(s.s_im[0]);
+		assert!(mag_s < 1e-6, "|S11| after cancel {mag_s}");
+		let zc = s.z0[0];
+		let t_want = (Z_REF / zc).sqrt();
+		close64(s.t_re[0], t_want, 1e-6, "T11 Kurokawa");
+		close64(s.t_im[0], 0.0, 1e-6, "T11 im");
 	}
 
 	#[test]
@@ -1197,6 +1232,7 @@ mod tests {
 			a as f32,
 			Z_REF as f32,
 			Z_REF as f32,
+			0.0,
 		);
 		assert_eq!(s.n_elements(), 2);
 		assert_eq!(s.s_re.len(), 4);

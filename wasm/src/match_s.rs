@@ -169,13 +169,15 @@ impl MatchedS {
 
 	/// Complex \(Z\) already in ohms. Does **not** scale a Gram. Always a
 	/// common real \(z_c\) (non-positive or non-finite \(z_c\) becomes
-	/// \(z_\mathrm{ref}\)). Green-mode match entry.
+	/// \(z_\mathrm{ref}\)). Finite \(x_\mathrm{self}\) is **added** to every
+	/// diagonal of \(\Im(Z)\) (series reactance). Green-mode match entry.
 	pub fn from_z(
 		z_re: &[f64],
 		z_im: &[f64],
 		n: usize,
 		z_ref: f64,
 		z_common_re: f64,
+		x_self: f64,
 	) -> Self {
 		let z_ref = if z_ref.is_finite() && z_ref > 0.0 {
 			z_ref
@@ -190,6 +192,12 @@ impl MatchedS {
 		let mut r_im = vec![0.0f64; nn];
 		if z_im.len() == nn {
 			r_im.copy_from_slice(z_im);
+		}
+		let x_self = if x_self.is_finite() { x_self } else { 0.0 };
+		if x_self != 0.0 {
+			for p in 0..n {
+				r_im[p * n + p] += x_self;
+			}
 		}
 		let has_x = r_im.iter().any(|&x| x != 0.0);
 		let zc = if z_common_re.is_finite() && z_common_re > 0.0 {
@@ -1092,7 +1100,7 @@ mod tests {
 	fn from_z_n1_real_is_open() {
 		let z_re = [Z_REF];
 		let z_im = [0.0];
-		let m = MatchedS::from_z(&z_re, &z_im, 1, Z_REF, Z_REF);
+		let m = MatchedS::from_z(&z_re, &z_im, 1, Z_REF, Z_REF, 0.0);
 		assert_eq!(m.n, 1);
 		close(m.z0[0], Z_REF, 0.0, "z0");
 		close(m.z0_im[0], 0.0, 0.0, "z0 im");
@@ -1105,14 +1113,41 @@ mod tests {
 	}
 
 	#[test]
+	fn from_z_adds_xself_on_diag_only() {
+		let z_re = [10.0, 1.0, 1.0, 10.0];
+		let z_im = [3.0, 0.5, 0.5, 3.0];
+		let x_self = 7.0;
+		let m = MatchedS::from_z(&z_re, &z_im, 2, Z_REF, 10.0, x_self);
+		close(m.r_im[0], 10.0, 0.0, "X11");
+		close(m.r_im[3], 10.0, 0.0, "X22");
+		close(m.r_im[1], 0.5, 0.0, "X12");
+		close(m.r_im[2], 0.5, 0.0, "X21");
+		close(m.r_re[0], 10.0, 0.0, "R11");
+		close(m.r_re[1], 1.0, 0.0, "R12");
+	}
+
+	#[test]
+	fn from_z_n1_cancelled_x_is_open() {
+		let z_re = [Z_REF];
+		let z_im = [-12.0];
+		let m = MatchedS::from_z(&z_re, &z_im, 1, Z_REF, Z_REF, 12.0);
+		close(m.r_im[0], 0.0, 0.0, "X11");
+		close(m.z0[0], Z_REF, 0.0, "z0");
+		close(m.s_re[0], 0.0, 1e-12, "S11 re");
+		close(m.s_im[0], 0.0, 1e-12, "S11 im");
+		close(m.t_re[0], 1.0, 1e-12, "T11");
+		close(m.t_im[0], 0.0, 1e-12, "T11 im");
+	}
+
+	#[test]
 	fn from_z_invalid_zc_clamps_to_zref() {
 		let z_re = [Z_REF];
 		let z_im = [0.0];
-		let m = MatchedS::from_z(&z_re, &z_im, 1, Z_REF, f64::NAN);
+		let m = MatchedS::from_z(&z_re, &z_im, 1, Z_REF, f64::NAN, 0.0);
 		close(m.z0[0], Z_REF, 0.0, "z0");
 		close(m.s_re[0], 0.0, 1e-12, "S11");
 		close(m.t_re[0], 1.0, 1e-12, "T11");
-		let m0 = MatchedS::from_z(&z_re, &z_im, 1, Z_REF, 0.0);
+		let m0 = MatchedS::from_z(&z_re, &z_im, 1, Z_REF, 0.0, 0.0);
 		close(m0.z0[0], Z_REF, 0.0, "z0 from 0");
 	}
 

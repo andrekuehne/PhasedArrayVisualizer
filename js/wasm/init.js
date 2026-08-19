@@ -16,8 +16,12 @@ let pradKernel = null;
 let extractFn = null;
 /** @type {typeof import('./simd/farfield_kernel.js').apply_element_pattern | null} */
 let applyElementFn = null;
+/** @type {typeof import('./simd/farfield_kernel.js').apply_green_pec_pattern | null} */
+let applyGreenPecFn = null;
 /** @type {typeof import('./simd/farfield_kernel.js').element_exponent_from_peak_dbi | null} */
 let exponentFn = null;
+/** @type {typeof import('./simd/farfield_kernel.js').z_self_pec_dipole | null} */
+let zSelfPecFn = null;
 
 export function wasmSupportsSimd(){
 	try {
@@ -83,6 +87,24 @@ export function applyElementPattern(domain, ax1, ax2, total, kind, n){
 }
 
 /**
+ * Multiply far-field intensity by PEC-dipole |F^iso|^2. Mutates `total`.
+ * @param {number} domain
+ * @param {Float32Array} ax1
+ * @param {Float32Array} ax2
+ * @param {Float32Array} total
+ * @param {number} h height in wavelengths at f0
+ * @param {number} ell dipole length in wavelengths at f0
+ * @param {number} freqScale
+ * @returns {number} peak intensity after apply
+ */
+export function applyGreenPecPattern(domain, ax1, ax2, total, h, ell, freqScale){
+	if (applyGreenPecFn === null){
+		throw new Error('Farfield WASM kernel is not initialized.');
+	}
+	return applyGreenPecFn(domain, ax1, ax2, total, h, ell, freqScale);
+}
+
+/**
  * Power-conserving cos^n exponent from peak element gain in dBi.
  * @param {number} gainDbi
  * @returns {number}
@@ -92,6 +114,21 @@ export function elementExponentFromPeakDbi(gainDbi){
 		throw new Error('Farfield WASM kernel is not initialized.');
 	}
 	return exponentFn(gainDbi);
+}
+
+/**
+ * Isolated PEC-dipole self impedance Z11 in ohms.
+ * @param {number} h
+ * @param {number} ell
+ * @param {number} a
+ * @param {number} freqScale
+ * @returns {Float64Array} `[re, im]`
+ */
+export function zSelfPecDipole(h, ell, a, freqScale){
+	if (zSelfPecFn === null){
+		throw new Error('Farfield WASM kernel is not initialized.');
+	}
+	return zSelfPecFn(h, ell, a, freqScale);
 }
 
 export async function initFarfieldWasm(){
@@ -104,7 +141,9 @@ export async function initFarfieldWasm(){
 	pradKernel = new mod.RadiatedPowerKernel();
 	extractFn = mod.extract_pattern_metrics;
 	applyElementFn = mod.apply_element_pattern;
+	applyGreenPecFn = mod.apply_green_pec_pattern;
 	exponentFn = mod.element_exponent_from_peak_dbi;
+	zSelfPecFn = mod.z_self_pec_dipole;
 	try {
 		await startFarfieldPool({simd: useSimd});
 	}

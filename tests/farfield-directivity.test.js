@@ -9,7 +9,7 @@ import {readFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {before, describe, test} from 'node:test';
-import {exponentFromPeakDbi, PATTERN_COS_N, PATTERN_ISOTROPIC} from '../js/phasedarray/element.js';
+import {exponentFromPeakDbi, PATTERN_COS_N, PATTERN_ISOTROPIC, PATTERN_GREEN_PEC, GREEN_PEC_DEFAULT_H, GREEN_PEC_DEFAULT_ELL, ElementGreenPec} from '../js/phasedarray/element.js';
 import {FarfieldLudwig3, FarfieldSpherical, FarfieldUV} from '../js/phasedarray/farfield.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -169,5 +169,76 @@ describe('WASM element pattern apply', () => {
 		assert.ok(Math.abs(applyAndDirectivity(sph, DOMAIN_SPHERICAL, sph.theta, sph.phi, PATTERN_COS_N, nExp) - expected) < 0.08);
 		assert.ok(Math.abs(applyAndDirectivity(uv, DOMAIN_UV, uv.u, uv.v, PATTERN_COS_N, nExp) - expected) < 0.08);
 		assert.ok(Math.abs(applyAndDirectivity(l3, DOMAIN_LUDWIG3, l3.az, l3.el, PATTERN_COS_N, nExp) - expected) < 0.08);
+	});
+});
+
+describe('WASM green PEC pattern apply', () => {
+	/** @type {Awaited<ReturnType<typeof loadGlue>>} */
+	let glue;
+
+	before(async () => {
+		glue = await loadGlue();
+	});
+
+	test('zeros UV samples outside the unit circle', () => {
+		const uv = new FarfieldUV(5, 5, 1, 1.5);
+		fill(uv, () => 1);
+		const flat = flatten(uv);
+		glue.apply_green_pec_pattern(
+			DOMAIN_UV,
+			Float32Array.from(uv.u),
+			Float32Array.from(uv.v),
+			flat,
+			GREEN_PEC_DEFAULT_H,
+			GREEN_PEC_DEFAULT_ELL,
+			1
+		);
+		const [p1] = uv.meshPoints;
+		for (let iv = 0; iv < uv.vPoints; iv++){
+			for (let iu = 0; iu < uv.uPoints; iu++){
+				const r2 = uv.u[iu] ** 2 + uv.v[iv] ** 2;
+				const val = flat[iv * p1 + iu];
+				if (r2 >= 1) assert.equal(val, 0);
+				else assert.ok(val > 0, `inside (${uv.u[iu]}, ${uv.v[iv]})`);
+			}
+		}
+	});
+
+	test('h=λ/4 E/H-plane: boresight > H-plane > E-plane, horizon 0', () => {
+		const theta = Float32Array.from([0, Math.PI / 4, Math.PI / 2]);
+		const phi = Float32Array.from([0, Math.PI / 2]);
+		const total = new Float32Array(6).fill(1);
+		glue.apply_green_pec_pattern(
+			DOMAIN_SPHERICAL,
+			theta,
+			phi,
+			total,
+			0.25,
+			GREEN_PEC_DEFAULT_ELL,
+			1
+		);
+		const bore = total[0];
+		const eMid = total[1];
+		const eHz = total[2];
+		const hMid = total[4];
+		const hHz = total[5];
+		assert.ok(bore > hMid && hMid > eMid, `bore=${bore} H=${hMid} E=${eMid}`);
+		assert.equal(eHz, 0);
+		assert.equal(hHz, 0);
+	});
+
+	test('create_parameters passes Green PEC kind and WP1 defaults', () => {
+		const ff = new FarfieldSpherical(3, 3, 1.2);
+		const pa = {
+			geometry: {x: [0], y: [0]},
+			create_farfield_vectors(){
+				return [new Float32Array([0]), new Float32Array([1])];
+			},
+			elementPattern: new ElementGreenPec(),
+		};
+		const pars = ff.create_parameters(pa);
+		assert.equal(pars.elementKind, PATTERN_GREEN_PEC);
+		assert.equal(pars.elementH, GREEN_PEC_DEFAULT_H);
+		assert.equal(pars.elementEll, GREEN_PEC_DEFAULT_ELL);
 	});
 });

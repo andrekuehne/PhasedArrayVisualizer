@@ -6,6 +6,14 @@ existing \(S\), \(T\), and array-factor machinery stay. First physics: **horizon
 short dipole over infinite PEC** (finite \(\ell\), not a point Hertzian). Later:
 patch over grounded slab, same interface.
 
+**Green PEC (implemented):** Element dropdown option **PEC dipole**. Matching
+(Isolated / Per-port / Common Z0 / Propagation) is hidden in that mode and remains
+a toy for isotropic / \(\cos^n\). \(Z\) from `form_green_pec_dipole`, pattern from
+`apply_green_pec_pattern`. Controls: \(h,\ell,a\), real \(z_c\), series Self X
+(added to \(\mathrm{diag}(Z)\)). Match sets \(z_c=\Re Z_{11}\) and
+\(X_\mathrm{self}=-\Im Z_{11}\) of the isolated self kernel. Auto-isolate Green LU
+at \(N>1024\); 32×32 stays matched.
+
 **Agent rule:** complete **one** work package per session. Do not start the next WP.
 End with the handoff block so the following agent can load this file plus the
 listed paths only.
@@ -458,7 +466,30 @@ from_z LU ms @ 8/16/32: 2.2 / 97 / 21000
 
 ```text
 WP4 done. Next: WP5.
-Pattern apply: <function names>.
+Pattern apply: apply_green_pec_pattern (wasm); FarfieldABC.apply_element_pattern
+  dispatches on PATTERN_GREEN_PEC.
+GUI still needs Matching=Green PEC + h,ℓ,a controls.
+```
+
+### WP4 results (implemented)
+
+- Files: `wasm/src/metrics.rs` (`direction_theta_phi`); `wasm/src/element.rs` (`apply_green_pec_pattern`); `js/phasedarray/element.js` (`PATTERN_GREEN_PEC`, `ElementGreenPec` test hook, not in `ElementTypes`); `js/phasedarray/farfield.js` dispatch; `js/wasm/init.js` wrapper. Rebuild: `./wasm/build.ps1`.
+- Signature:
+
+```text
+apply_green_pec_pattern(domain, ax1, ax2, total, h, ell, freq_scale) -> peak
+  // |F^iso|² of WP1 f_iso_pec_dipole_power after look()→(θ,φ)
+  // UV exterior / unknown domain: factor 0. Does not replace isotropic/cos^n.
+```
+
+- Isolated \(T=I\) and matched \(w=Ta\) both use the same post-AF multiply (`create_farfield_vectors` unchanged). No GUI. No Gram.
+- Tests: `cargo test --manifest-path wasm/Cargo.toml` (4 new `element::tests::green_pec_*`); `node --test tests/farfield-directivity.test.js`.
+- Next: WP5 Matching=Green PEC + \(h,\ell,a\) controls. Do not change steer illumination-after-\(T\).
+
+```text
+WP4 done. Next: WP5.
+Pattern apply: apply_green_pec_pattern (wasm); FarfieldABC.apply_element_pattern
+  dispatches on PATTERN_GREEN_PEC.
 GUI still needs Matching=Green PEC + h,ℓ,a controls.
 ```
 
@@ -494,7 +525,20 @@ GUI still needs Matching=Green PEC + h,ℓ,a controls.
 ### Handoff
 
 ```text
-WP5 done. First user-visible Green mode is PEC dipole.
+WP5 done. First user-visible Green mode is PEC dipole (Element dropdown).
+Matching stays Isolated / Per-port / Common Z0 / Propagation for isotropic/cos^n.
+Next optional: WP6 spectral validation, then WP7 slab.
+```
+
+### WP5 results (implemented)
+
+- Files: `js/phasedarray/element.js` (`ElementGreenPec` in `ElementTypes`, title PEC dipole, controls \(h,\ell,a,z_c\), series Self X); `js/index-scenes.js` hides Matching when PEC dipole is selected, `form_green_pec_dipole` for \(S,T\), Match button from `z_self_pec_dipole`; `js/phasedarray/matched.js` `GREEN_PEC_AUTO_ISOLATE_N = 1024` (does not change `MATCHED_AUTO_ISOLATE_N = 512`).
+- GUI: Matching select is **not** rewritten. Switching back to isotropic/\(\cos^n\) restores the previous toy. Note under Element warns that 32×32 LU can take seconds. Self X **adds** to physical \(\Im Z_{ii}\) (unlike the Gram toys, which write the diagonal). Match is single-element, not scan-matched.
+- Tests: `node --test tests/matched-s.test.js` (Green N=1 leftover \(|S_{11}|\); N=1 cancelled \(X_{11}\) opens \(S\); 8×8 reciprocal finite \(S_{ii}\), Gram unused).
+
+```text
+WP5 done. First user-visible Green mode is PEC dipole (Element dropdown).
+Matching stays Isolated / Per-port / Common Z0 / Propagation for isotropic/cos^n.
 Next optional: WP6 spectral validation, then WP7 slab.
 ```
 

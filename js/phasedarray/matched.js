@@ -7,6 +7,8 @@ export const Z_REF = 50;
 
 /** Auto-switch Coupling to Isolated when a new geometry exceeds this many elements. */
 export const MATCHED_AUTO_ISOLATE_N = 512;
+/** Skip Green PEC LU (T = I) when N exceeds this. 32×32 stays matched. */
+export const GREEN_PEC_AUTO_ISOLATE_N = 1024;
 
 /**
  * Hemispheric power-conserving D(μ) used by the radiated-power Gram.
