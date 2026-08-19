@@ -57,8 +57,10 @@ export class RadiatedPowerKernel {
     [Symbol.dispose](): void;
     compute(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number): void;
     compute_j0(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number): void;
+    fill_green_pec_dipole_z(x: Float32Array, y: Float32Array, frequency_scale: number, h: number, ell: number, a: number): void;
     fill_isolated(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number): void;
     fill_isolated_range(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number, sample0: number, sample_count: number): void;
+    form_from_z(z_ref: number, z_common_re: number): void;
     form_gram(): void;
     form_green_pec_dipole(x: Float32Array, y: Float32Array, frequency_scale: number, h: number, ell: number, a: number, z_ref: number, z_common_re: number): void;
     form_matched_s(z_ref: number, x: Float32Array, y: Float32Array, x_nn: number, alpha: number, beta: number, aniso: number, z_common_re: number, x_self: number): void;
@@ -176,8 +178,10 @@ export interface InitOutput {
     readonly farfieldkernel_take_total: (a: number) => [number, number];
     readonly radiatedpowerkernel_compute: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
     readonly radiatedpowerkernel_compute_j0: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
+    readonly radiatedpowerkernel_fill_green_pec_dipole_z: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
     readonly radiatedpowerkernel_fill_isolated: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
     readonly radiatedpowerkernel_fill_isolated_range: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
+    readonly radiatedpowerkernel_form_from_z: (a: number, b: number, c: number) => void;
     readonly radiatedpowerkernel_form_gram: (a: number) => void;
     readonly radiatedpowerkernel_form_green_pec_dipole: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => void;
     readonly radiatedpowerkernel_form_matched_s: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => void;

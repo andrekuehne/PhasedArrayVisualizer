@@ -268,6 +268,14 @@ mod tests {
 		let (re_yx, im_yx) = z_pair_pec_dipole(0.1, 0.5, h, ell, a, fs);
 		let d = (re_xy - re_yx).hypot(im_xy - im_yx);
 		assert!(d > 0.05, "x-dipole is not isotropic: |Z(Δx,Δy)-Z(Δy,Δx)|={d}");
+
+		let (re_yp, im_yp) = z_pair_pec_dipole(0.4, 0.25, h, ell, a, fs);
+		let (re_yn, im_yn) = z_pair_pec_dipole(0.4, -0.25, h, ell, a, fs);
+		let (re_xn, im_xn) = z_pair_pec_dipole(-0.4, 0.25, h, ell, a, fs);
+		close(re_yp, re_yn, 1e-12, "even in Δy re");
+		close(im_yp, im_yn, 1e-12, "even in Δy im");
+		close(re_yp, re_xn, 1e-12, "even in Δx re");
+		close(im_yp, im_xn, 1e-12, "even in Δx im");
 	}
 
 	#[test]

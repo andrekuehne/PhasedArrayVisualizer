@@ -400,6 +400,27 @@ from_z LU ms @ 8/16/32: ...
 32×32 conclusion: ...
 ```
 
+### WP3 results (implemented)
+
+- Files: `wasm/src/prad.rs` unique-lag fill (`fill_green_pec_dipole_z`; rect \((\lvert\Delta i\rvert,\lvert\Delta j\rvert)\) table, else bit-keyed HashMap); `form_from_z`; `form_green_pec_dipole` still fill+match. Bindgen of the split APIs in `wasm/src/lib.rs`. Naive loop is `#[cfg(test)]` only.
+- 4×4 rect unique-lag \(Z\) matches naïve (max \(|\Delta|<10^{-12}\)); \(U=n_x n_y=16\).
+- Bench: `node --test tests/green-bench.test.js` (SIMD, \(0.5\lambda\), default \(h,\ell,a\)).
+
+| array | \(N\) | Z fill ms | `from_z` LU ms | total ms |
+| --- | --- | --- | --- | --- |
+| 8×8 | 64 | 0.1 | 2.2 | 2.2 |
+| 16×16 | 256 | 0.2 | 97 | 98 |
+| 32×32 | 1024 | 11 | 21000 | 21000 |
+
+- Next: WP4 \(F^\mathrm{iso}\) pattern. Do not change GUI. Do not raise `MATCHED_AUTO_ISOLATE_N` here.
+
+```text
+WP3 done. Next: WP4.
+Z fill ms @ 8/16/32: 0.1 / 0.2 / 11
+from_z LU ms @ 8/16/32: 2.2 / 97 / 21000
+32×32 conclusion: fill is not the LU (~11 ms vs ~21 s).
+```
+
 ---
 
 ## 10. WP4 — \(F^\mathrm{iso}\) as element pattern

@@ -35,9 +35,14 @@ impl Hasher for U32Hasher {
 	fn write_u32(&mut self, i: u32) {
 		self.0 = i as u64;
 	}
+
+	fn write_u64(&mut self, i: u64) {
+		self.0 = self.0.wrapping_mul(0x100000001b3).wrapping_add(i);
+	}
 }
 
 type RhoCache = HashMap<u32, f32, BuildHasherDefault<U32Hasher>>;
+type LagCache = HashMap<(u64, u64), (f64, f64), BuildHasherDefault<U32Hasher>>;
 
 pub struct PradState {
 	pub quad: Option<HemisphereQuad>,
@@ -49,6 +54,7 @@ pub struct PradState {
 	pub p_re: Vec<f32>,
 	pub p_im: Vec<f32>,
 	pub n_unique_rho: usize,
+	pub n_unique_lag: usize,
 	pub z0: Vec<f64>,
 	pub z0_im: Vec<f64>,
 	pub r_re: Vec<f64>,
@@ -73,6 +79,7 @@ impl PradState {
 			p_re: Vec::new(),
 			p_im: Vec::new(),
 			n_unique_rho: 0,
+			n_unique_lag: 0,
 			z0: Vec::new(),
 			z0_im: Vec::new(),
 			r_re: Vec::new(),
@@ -361,8 +368,98 @@ impl PradState {
 		self.apply_matched(m);
 	}
 
-	/// Naïve \(N^2\) PEC-dipole \(Z\) from [`z_pair_pec_dipole`], then
-	/// [`MatchedS::from_z`]. No Gram. Unique-lag fill is WP3.
+	/// Unique-lag PEC-dipole \(Z\) into `r_re`/`r_im`. No Gram, no `from_z`.
+	pub fn fill_green_pec_dipole_z(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		h: f32,
+		ell: f32,
+		a: f32,
+	) {
+		if x.len() != y.len() || x.is_empty() {
+			self.n = 0;
+			self.n_unique_lag = 0;
+			self.r_re.clear();
+			self.r_im.clear();
+			return;
+		}
+		let n = x.len();
+		self.n = n;
+		let nn = n * n;
+		self.r_re.clear();
+		self.r_re.resize(nn, 0.0);
+		self.r_im.clear();
+		self.r_im.resize(nn, 0.0);
+		let h = h as f64;
+		let ell = ell as f64;
+		let a = a as f64;
+		let fs = frequency_scale as f64;
+		if let Some((nx, ny, ix, iy, xs, ys)) = uniform_product_lattice(x, y) {
+			let mut tre = vec![0.0f64; nx * ny];
+			let mut tim = vec![0.0f64; nx * ny];
+			for di in 0..nx {
+				for dj in 0..ny {
+					let dx = xs[di] as f64 - xs[0] as f64;
+					let dy = ys[dj] as f64 - ys[0] as f64;
+					let (re, im) = z_pair_pec_dipole(dx, dy, h, ell, a, fs);
+					let k = di * ny + dj;
+					tre[k] = re;
+					tim[k] = im;
+				}
+			}
+			for p in 0..n {
+				for q in 0..=p {
+					let di = ix[p].abs_diff(ix[q]);
+					let dj = iy[p].abs_diff(iy[q]);
+					let k = di * ny + dj;
+					let re = tre[k];
+					let im = tim[k];
+					self.r_re[p * n + q] = re;
+					self.r_im[p * n + q] = im;
+					self.r_re[q * n + p] = re;
+					self.r_im[q * n + p] = im;
+				}
+			}
+			self.n_unique_lag = nx * ny;
+		} else {
+			let mut cache = LagCache::default();
+			for p in 0..n {
+				for q in 0..=p {
+					let dx = (x[p] as f64 - x[q] as f64).abs();
+					let dy = (y[p] as f64 - y[q] as f64).abs();
+					let key = (dx.to_bits(), dy.to_bits());
+					let (re, im) = *cache.entry(key).or_insert_with(|| {
+						z_pair_pec_dipole(dx, dy, h, ell, a, fs)
+					});
+					self.r_re[p * n + q] = re;
+					self.r_im[p * n + q] = im;
+					self.r_re[q * n + p] = re;
+					self.r_im[q * n + p] = im;
+				}
+			}
+			self.n_unique_lag = cache.len();
+		}
+	}
+
+	/// [`MatchedS::from_z`] on the current Green \(Z\) (`r_re`/`r_im`).
+	pub fn form_from_z(&mut self, z_ref: f32, z_common_re: f32) {
+		if self.n == 0 || self.r_re.len() != self.n * self.n {
+			self.clear_matched();
+			return;
+		}
+		let m = MatchedS::from_z(
+			&self.r_re,
+			&self.r_im,
+			self.n,
+			z_ref as f64,
+			z_common_re as f64,
+		);
+		self.apply_matched(m);
+	}
+
+	/// Unique-lag PEC-dipole \(Z\), then [`MatchedS::from_z`]. No Gram.
 	pub fn form_green_pec_dipole(
 		&mut self,
 		x: &[f32],
@@ -374,32 +471,108 @@ impl PradState {
 		z_ref: f32,
 		z_common_re: f32,
 	) {
-		if x.len() != y.len() || x.is_empty() {
-			self.n = 0;
-			self.clear_matched();
-			return;
-		}
-		let n = x.len();
-		self.n = n;
-		let nn = n * n;
-		let mut z_re = vec![0.0f64; nn];
-		let mut z_im = vec![0.0f64; nn];
-		let h = h as f64;
-		let ell = ell as f64;
-		let a = a as f64;
-		let fs = frequency_scale as f64;
-		for p in 0..n {
-			for q in 0..n {
-				let dx = x[p] as f64 - x[q] as f64;
-				let dy = y[p] as f64 - y[q] as f64;
-				let (re, im) = z_pair_pec_dipole(dx, dy, h, ell, a, fs);
-				z_re[p * n + q] = re;
-				z_im[p * n + q] = im;
-			}
-		}
-		let m = MatchedS::from_z(&z_re, &z_im, n, z_ref as f64, z_common_re as f64);
-		self.apply_matched(m);
+		self.fill_green_pec_dipole_z(x, y, frequency_scale, h, ell, a);
+		self.form_from_z(z_ref, z_common_re);
 	}
+}
+
+#[cfg(test)]
+fn fill_green_pec_dipole_z_naive(
+	s: &mut PradState,
+	x: &[f32],
+	y: &[f32],
+	frequency_scale: f32,
+	h: f32,
+	ell: f32,
+	a: f32,
+) {
+	if x.len() != y.len() || x.is_empty() {
+		s.n = 0;
+		s.r_re.clear();
+		s.r_im.clear();
+		return;
+	}
+	let n = x.len();
+	s.n = n;
+	let nn = n * n;
+	s.r_re.clear();
+	s.r_re.resize(nn, 0.0);
+	s.r_im.clear();
+	s.r_im.resize(nn, 0.0);
+	let h = h as f64;
+	let ell = ell as f64;
+	let a = a as f64;
+	let fs = frequency_scale as f64;
+	for p in 0..n {
+		for q in 0..n {
+			let dx = x[p] as f64 - x[q] as f64;
+			let dy = y[p] as f64 - y[q] as f64;
+			let (re, im) = z_pair_pec_dipole(dx, dy, h, ell, a, fs);
+			s.r_re[p * n + q] = re;
+			s.r_im[p * n + q] = im;
+		}
+	}
+}
+
+fn unique_sorted_bits(v: &[f32]) -> Vec<f32> {
+	let mut bits: Vec<u32> = v.iter().map(|x| x.to_bits()).collect();
+	bits.sort_unstable();
+	bits.dedup();
+	bits.into_iter().map(f32::from_bits).collect()
+}
+
+fn is_uniform_sorted(v: &[f32]) -> bool {
+	if v.len() <= 2 {
+		return true;
+	}
+	let d0 = v[1] - v[0];
+	if !d0.is_finite() || d0 == 0.0 {
+		return false;
+	}
+	let tol = 1e-5 * d0.abs().max(1e-12);
+	for i in 2..v.len() {
+		let d = v[i] - v[i - 1];
+		if !d.is_finite() || (d - d0).abs() > tol {
+			return false;
+		}
+	}
+	true
+}
+
+fn uniform_product_lattice(
+	x: &[f32],
+	y: &[f32],
+) -> Option<(usize, usize, Vec<usize>, Vec<usize>, Vec<f32>, Vec<f32>)> {
+	let n = x.len();
+	let xs = unique_sorted_bits(x);
+	let ys = unique_sorted_bits(y);
+	let nx = xs.len();
+	let ny = ys.len();
+	if nx.checked_mul(ny) != Some(n) {
+		return None;
+	}
+	if !is_uniform_sorted(&xs) || !is_uniform_sorted(&ys) {
+		return None;
+	}
+	let mut ix = vec![0usize; n];
+	let mut iy = vec![0usize; n];
+	let mut seen = vec![false; n];
+	for p in 0..n {
+		let i = xs
+			.binary_search_by(|a| a.to_bits().cmp(&x[p].to_bits()))
+			.ok()?;
+		let j = ys
+			.binary_search_by(|a| a.to_bits().cmp(&y[p].to_bits()))
+			.ok()?;
+		let slot = i * ny + j;
+		if seen[slot] {
+			return None;
+		}
+		seen[slot] = true;
+		ix[p] = i;
+		iy[p] = j;
+	}
+	Some((nx, ny, ix, iy, xs, ys))
 }
 
 fn radial_integral(rho2: f32, k: f32, coeff: &[f64], s_mu: &[f32]) -> f32 {
@@ -1045,5 +1218,51 @@ mod tests {
 		close64(s.r_re[1], z12_re, 1e-12, "Z12 vs z_pair");
 		close64(s.r_im[1], z12_im, 1e-12, "Z12 im vs z_pair");
 		assert!(s.p_re.is_empty(), "Green path must not fill Gram");
+	}
+
+	#[test]
+	fn green_4x4_unique_lag_matches_naive() {
+		use crate::green::{DEFAULT_A, DEFAULT_ELL, DEFAULT_H};
+		let h = DEFAULT_H as f32;
+		let ell = DEFAULT_ELL as f32;
+		let a = DEFAULT_A as f32;
+		let (x, y) = rect_xy(4, 4, 0.5, 0.5);
+		let mut uniq = PradState::new();
+		let mut naive = PradState::new();
+		uniq.fill_green_pec_dipole_z(&x, &y, 1.0, h, ell, a);
+		fill_green_pec_dipole_z_naive(&mut naive, &x, &y, 1.0, h, ell, a);
+		assert_eq!(uniq.n_unique_lag, 16, "4×4 lattice U = nx ny");
+		assert_eq!(uniq.r_re.len(), 16 * 16);
+		let mut max_d = 0.0f64;
+		for i in 0..uniq.r_re.len() {
+			max_d = max_d.max((uniq.r_re[i] - naive.r_re[i]).abs());
+			max_d = max_d.max((uniq.r_im[i] - naive.r_im[i]).abs());
+		}
+		assert!(max_d < 1e-12, "unique vs naïve max|Δ|={max_d}");
+	}
+
+	#[test]
+	fn green_irregular_triple_matches_naive() {
+		use crate::green::{DEFAULT_A, DEFAULT_ELL, DEFAULT_H};
+		let h = DEFAULT_H as f32;
+		let ell = DEFAULT_ELL as f32;
+		let a = DEFAULT_A as f32;
+		let x = [0.0f32, 0.37, 0.9];
+		let y = [0.0f32, 0.21, -0.4];
+		let mut uniq = PradState::new();
+		let mut naive = PradState::new();
+		uniq.fill_green_pec_dipole_z(&x, &y, 1.0, h, ell, a);
+		fill_green_pec_dipole_z_naive(&mut naive, &x, &y, 1.0, h, ell, a);
+		assert!(
+			uniq.n_unique_lag < 9,
+			"unique lags {} should collapse vs N²",
+			uniq.n_unique_lag
+		);
+		let mut max_d = 0.0f64;
+		for i in 0..9 {
+			max_d = max_d.max((uniq.r_re[i] - naive.r_re[i]).abs());
+			max_d = max_d.max((uniq.r_im[i] - naive.r_im[i]).abs());
+		}
+		assert!(max_d < 1e-12, "irregular unique vs naïve max|Δ|={max_d}");
 	}
 }
