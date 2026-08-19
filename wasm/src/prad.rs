@@ -274,7 +274,7 @@ impl PradState {
 		self.match_residual = 0.0;
 	}
 
-	/// \(R = 2 Z_\mathrm{ref} P_H\), optional \(jX(\rho)\), match, power-wave \(S\).
+	/// \(R = 2 Z_\mathrm{ref} P_H\), optional \(jX(\Delta x,\Delta y)\), match, power-wave \(S\).
 	/// Uses the current Gram; does not fill \(A\).
 	/// Finite \(z_\mathrm{common,re}>0\) skips the per-port solver.
 	pub fn form_matched_s(
@@ -284,6 +284,8 @@ impl PradState {
 		y: &[f32],
 		x_nn: f32,
 		alpha: f32,
+		beta: f32,
+		aniso: f32,
 		z_common_re: f32,
 		z_common_im: f32,
 	) {
@@ -300,6 +302,8 @@ impl PradState {
 			y,
 			x_nn as f64,
 			alpha as f64,
+			beta as f64,
+			aniso as f64,
 			z_common_re as f64,
 			z_common_im as f64,
 		);
@@ -767,7 +771,7 @@ mod tests {
 		let mut s = PradState::new();
 		s.set_quadrature(8, 2);
 		s.compute_j0(&[0.0], &[0.0], 1.0, PATTERN_ISOTROPIC, 0.0);
-		s.form_matched_s(Z_REF as f32, &[0.0], &[0.0], 0.0, 0.0, 0.0, 0.0);
+		s.form_matched_s(Z_REF as f32, &[0.0], &[0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 		close64(s.r_re[0], Z_REF, 1e-5, "R11");
 		close64(s.z0[0], Z_REF, 1e-6, "z0");
 		close64(s.s_re[0], 0.0, 1e-9, "S11 re");
@@ -783,7 +787,7 @@ mod tests {
 		let mut s = PradState::new();
 		s.set_quadrature(48, 2);
 		s.compute_j0(&[0.0, 20.0], &[0.0, 0.0], 1.0, PATTERN_ISOTROPIC, 0.0);
-		s.form_matched_s(Z_REF as f32, &[0.0, 20.0], &[0.0, 0.0], 0.0, 0.0, 0.0, 0.0);
+		s.form_matched_s(Z_REF as f32, &[0.0, 20.0], &[0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 		close64(s.z0[0], Z_REF, 1.0, "z0_1 ~ 50");
 		close64(s.z0[1], Z_REF, 1.0, "z0_2 ~ 50");
 		assert!(s.match_residual < TAU, "residual {}", s.match_residual);
@@ -799,7 +803,7 @@ mod tests {
 		let mut s = PradState::new();
 		s.set_quadrature(24, 2);
 		s.compute_j0(&[0.0, 0.5, 1.0], &[0.0, 0.25, -0.25], 1.0, PATTERN_ISOTROPIC, 0.0);
-		s.form_matched_s(Z_REF as f32, &[0.0, 0.5, 1.0], &[0.0, 0.25, -0.25], 0.0, 0.0, 0.0, 0.0);
+		s.form_matched_s(Z_REF as f32, &[0.0, 0.5, 1.0], &[0.0, 0.25, -0.25], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 		let n = 3;
 		assert!(s.match_residual < TAU, "residual {}", s.match_residual);
 		for p in 0..n {
@@ -823,7 +827,7 @@ mod tests {
 		let x = [0.0f32, 0.5, 1.0];
 		let y = [0.0f32, 0.25, -0.25];
 		s.compute_j0(&x, &y, 1.0, PATTERN_ISOTROPIC, 0.0);
-		s.form_matched_s(Z_REF as f32, &x, &y, 10.0, 2.0, 0.0, 0.0);
+		s.form_matched_s(Z_REF as f32, &x, &y, 10.0, 2.0, 0.0, 0.0, 0.0, 0.0);
 		let n = 3;
 		assert!(s.match_residual < TAU, "residual {}", s.match_residual);
 		assert!(s.z0_im.iter().any(|v| v.abs() > 1e-6), "z0 imag");
@@ -845,7 +849,7 @@ mod tests {
 		let x = [0.0f32, 0.5, 1.0];
 		let y = [0.0f32, 0.25, -0.25];
 		s.compute_j0(&x, &y, 1.0, PATTERN_ISOTROPIC, 0.0);
-		s.form_matched_s(Z_REF as f32, &x, &y, 0.0, 0.0, Z_REF as f32, 0.0);
+		s.form_matched_s(Z_REF as f32, &x, &y, 0.0, 0.0, 0.0, 0.0, Z_REF as f32, 0.0);
 		assert_eq!(s.match_iterations, 0);
 		close64(s.z0[0], Z_REF, 0.0, "z0_0");
 		close64(s.z0[1], Z_REF, 0.0, "z0_1");

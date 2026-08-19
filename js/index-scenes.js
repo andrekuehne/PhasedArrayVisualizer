@@ -47,13 +47,15 @@ const CHANGE_PA 	= 1 << 5;
 export class SceneControlPhasedArray extends SceneControl{
 	static autoUpdateURL = false;
 	constructor(parent){
-		super(parent, ['phase-bits', 'atten-lsb', 'atten-bits', 'atten-manual', 'phase-manual', 'phase-dither', 'coupling', 'match-style', 'coupling-z0-re', 'coupling-z0-im', 'coupling-xnn', 'coupling-alpha', 'steer-law']);
+		super(parent, ['phase-bits', 'atten-lsb', 'atten-bits', 'atten-manual', 'phase-manual', 'phase-dither', 'coupling', 'match-style', 'coupling-z0-re', 'coupling-z0-im', 'coupling-xnn', 'coupling-alpha', 'coupling-beta', 'coupling-aniso', 'steer-law']);
 		this.pa = null;
 		this._matchedFreq = NaN;
 		this._matchedKind = null;
 		this._matchedN = null;
 		this._matchedXnn = NaN;
 		this._matchedAlpha = NaN;
+		this._matchedBeta = NaN;
+		this._matchedAniso = NaN;
 		this._matchedZ0Re = NaN;
 		this._matchedZ0Im = NaN;
 		this._steerFreq = NaN;
@@ -85,6 +87,8 @@ export class SceneControlPhasedArray extends SceneControl{
 			this.find_element('steer-law').value = 'geometric';
 			this.find_element('coupling-xnn').value = '0';
 			this.find_element('coupling-alpha').value = '2';
+			this.find_element('coupling-beta').value = '0';
+			this.find_element('coupling-aniso').value = '0';
 			this.find_element('coupling-z0-re').value = '45';
 			this.find_element('coupling-z0-im').value = '5';
 			this.sync_mode_radios();
@@ -126,11 +130,15 @@ export class SceneControlPhasedArray extends SceneControl{
 		const z0ImDiv = document.getElementById(this.prepend + '-coupling-z0-im-div');
 		const xnnDiv = document.getElementById(this.prepend + '-coupling-xnn-div');
 		const alphaDiv = document.getElementById(this.prepend + '-coupling-alpha-div');
+		const betaDiv = document.getElementById(this.prepend + '-coupling-beta-div');
+		const anisoDiv = document.getElementById(this.prepend + '-coupling-aniso-div');
 		if (styleDiv) styleDiv.style.display = showX ? 'flex' : 'none';
 		if (z0ReDiv) z0ReDiv.style.display = showZ0 ? 'flex' : 'none';
 		if (z0ImDiv) z0ImDiv.style.display = showZ0 ? 'flex' : 'none';
 		if (xnnDiv) xnnDiv.style.display = showX ? 'flex' : 'none';
 		if (alphaDiv) alphaDiv.style.display = showX ? 'flex' : 'none';
+		if (betaDiv) betaDiv.style.display = showX ? 'flex' : 'none';
+		if (anisoDiv) anisoDiv.style.display = showX ? 'flex' : 'none';
 	}
 	couplingMode(){
 		return this.find_element('coupling').value === 'matched' ? 'matched' : 'isolated';
@@ -162,6 +170,14 @@ export class SceneControlPhasedArray extends SceneControl{
 		if (!Number.isFinite(v) || v < 0) return 2;
 		return v;
 	}
+	couplingBeta(){
+		const v = Number(this.find_element('coupling-beta').value);
+		return Number.isFinite(v) ? v : 0;
+	}
+	couplingAniso(){
+		const v = Number(this.find_element('coupling-aniso').value);
+		return Number.isFinite(v) ? v : 0;
+	}
 	matchStyle(){
 		return this.find_element('match-style').value === 'common' ? 'common' : 'per-port';
 	}
@@ -187,6 +203,7 @@ export class SceneControlPhasedArray extends SceneControl{
 		super.control_changed(key);
 		if (key === 'coupling' || key === 'steer-law' || key === 'match-style'
 			|| key === 'coupling-xnn' || key === 'coupling-alpha'
+			|| key === 'coupling-beta' || key === 'coupling-aniso'
 			|| key === 'coupling-z0-re' || key === 'coupling-z0-im'){
 			this.sync_mode_radios();
 			if (typeof this.parent.update_url_parameters === 'function') this.parent.update_url_parameters();
@@ -201,6 +218,8 @@ export class SceneControlPhasedArray extends SceneControl{
 		const n = pa.size;
 		const xnn = this.couplingXnn();
 		const alpha = this.couplingAlpha();
+		const beta = this.couplingBeta();
+		const aniso = this.couplingAniso();
 		const [zcRe, zcIm] = this.commonZ0Args();
 		if (
 			pa.tRe && pa.tRe.length === n * n
@@ -210,6 +229,8 @@ export class SceneControlPhasedArray extends SceneControl{
 			&& this._matchedN === elemN
 			&& this._matchedXnn === xnn
 			&& this._matchedAlpha === alpha
+			&& this._matchedBeta === beta
+			&& this._matchedAniso === aniso
 			&& this._matchedZ0Re === zcRe
 			&& this._matchedZ0Im === zcIm
 		) return;
@@ -217,7 +238,7 @@ export class SceneControlPhasedArray extends SceneControl{
 		const nMu = nMuFromGeometry(pa.geometry, freq);
 		kernel.set_quadrature(nMu, 2);
 		kernel.compute_j0(pa.geometry.x, pa.geometry.y, freq, kind, elemN);
-		kernel.form_matched_s(Z_REF, pa.geometry.x, pa.geometry.y, xnn, alpha, zcRe, zcIm);
+		kernel.form_matched_s(Z_REF, pa.geometry.x, pa.geometry.y, xnn, alpha, beta * freq, aniso, zcRe, zcIm);
 		pa.set_matched_basis(
 			kernel.take_z0(),
 			kernel.take_s_re(),
@@ -233,6 +254,8 @@ export class SceneControlPhasedArray extends SceneControl{
 		this._matchedN = elemN;
 		this._matchedXnn = xnn;
 		this._matchedAlpha = alpha;
+		this._matchedBeta = beta;
+		this._matchedAniso = aniso;
 		this._matchedZ0Re = zcRe;
 		this._matchedZ0Im = zcIm;
 	}
@@ -258,6 +281,7 @@ export class SceneControlPhasedArray extends SceneControl{
 		if (this.changed['steer-law']) changeFlag |= CHANGE_PHASE;
 		if (this.changed['coupling'] || this.changed['match-style']
 			|| this.changed['coupling-xnn'] || this.changed['coupling-alpha']
+			|| this.changed['coupling-beta'] || this.changed['coupling-aniso']
 			|| this.changed['coupling-z0-re'] || this.changed['coupling-z0-im']){
 			changeFlag |= CHANGE_PHASE;
 			this.farfieldNeedsCalculation = true;
@@ -308,6 +332,8 @@ export class SceneControlPhasedArray extends SceneControl{
 				|| this._matchedFreq !== freq
 				|| this._matchedXnn !== this.couplingXnn()
 				|| this._matchedAlpha !== this.couplingAlpha()
+				|| this._matchedBeta !== this.couplingBeta()
+				|| this._matchedAniso !== this.couplingAniso()
 				|| this._matchedZ0Re !== zcRe
 				|| this._matchedZ0Im !== zcIm;
 			if (basisDirty){
@@ -329,7 +355,7 @@ export class SceneControlPhasedArray extends SceneControl{
 				if (this.steerLaw() === 'conjugate') this.pa.compute_conjugate_phase(freq);
 				else this.pa.compute_phase();
 				this._steerFreq = freq;
-				this.clear_changed('steer-law', 'coupling', 'match-style', 'coupling-xnn', 'coupling-alpha', 'coupling-z0-re', 'coupling-z0-im');
+				this.clear_changed('steer-law', 'coupling', 'match-style', 'coupling-xnn', 'coupling-alpha', 'coupling-beta', 'coupling-aniso', 'coupling-z0-re', 'coupling-z0-im');
 			});
 		}
 		if (changeFlag & CHANGE_ATTEN){

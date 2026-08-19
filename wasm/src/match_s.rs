@@ -1,8 +1,8 @@
 //! Radiative resistance, simultaneous port match, and power-wave \(S\).
 //!
 //! §6–8 of `docs/approximate_matched_basis.md`, plus a phenomenological
-//! mutual reactance \(X(\rho)\), Kurokawa \(S\) at complex \(z_0\), and an
-//! optional common complex reference \(z_c\) (§7.1). Operates on an
+//! mutual reactance \(X(\Delta x,\Delta y)\), Kurokawa \(S\) at complex \(z_0\),
+//! and an optional common complex reference \(z_c\) (§7.1). Operates on an
 //! already-formed radiated-power Gram \(P_H\). Internals are f64; the Gram
 //! itself stays f32.
 
@@ -53,11 +53,12 @@ impl MatchedS {
 	/// \(R = 2 Z_\mathrm{ref} P_H\), match on \(\Re(R)\), \(S\) from Hermitian \(R\).
 	#[allow(dead_code)]
 	pub fn from_gram(p_re: &[f32], p_im: &[f32], n: usize, z_ref: f64) -> Self {
-		Self::from_gram_coupled(p_re, p_im, n, z_ref, &[], &[], 0.0, 0.0, 0.0, 0.0)
+		Self::from_gram_coupled(p_re, p_im, n, z_ref, &[], &[], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 	}
 
-	/// Same as [`from_gram`], then \(Z = R + jX(\rho)\). Per-port conjugate match
-	/// unless \(\Re(z_c)>0\), in which case every port uses that common \(z_c\).
+	/// Same as [`from_gram`], then \(Z = R + jX(\Delta x,\Delta y)\). Per-port
+	/// conjugate match unless \(\Re(z_c)>0\), in which case every port uses
+	/// that common \(z_c\).
 	pub fn from_gram_coupled(
 		p_re: &[f32],
 		p_im: &[f32],
@@ -67,6 +68,8 @@ impl MatchedS {
 		y: &[f32],
 		x_nn: f64,
 		alpha: f64,
+		beta: f64,
+		aniso: f64,
 		z_common_re: f64,
 		z_common_im: f64,
 	) -> Self {
@@ -92,7 +95,7 @@ impl MatchedS {
 			r_im[p * n + p] = 0.0;
 		}
 
-		let coupled = add_mutual_reactance(&mut r_im, x, y, n, x_nn, alpha);
+		let coupled = add_mutual_reactance(&mut r_im, x, y, n, x_nn, alpha, beta, aniso);
 		if z_common_re.is_finite() && z_common_re > 0.0 {
 			let zc_im = if z_common_im.is_finite() {
 				z_common_im
@@ -312,7 +315,8 @@ impl MatchedS {
 	}
 }
 
-/// \(X_{pq}=X_{nn}(d_\min/\rho_{pq})^\alpha\). Returns true if any off-diagonal was written.
+/// \(X_{pq}=X_{nn}(d_\min/\rho)^\alpha\cos(\beta(\rho/d_\min-1))(1+A\cos 2\varphi)\).
+/// Returns true if any off-diagonal was written.
 fn add_mutual_reactance(
 	r_im: &mut [f64],
 	x: &[f32],
@@ -320,6 +324,8 @@ fn add_mutual_reactance(
 	n: usize,
 	x_nn: f64,
 	alpha: f64,
+	beta: f64,
+	aniso: f64,
 ) -> bool {
 	if n < 2 || x.len() != n || y.len() != n {
 		return false;
@@ -332,6 +338,8 @@ fn add_mutual_reactance(
 	} else {
 		return false;
 	};
+	let beta = if beta.is_finite() { beta } else { 0.0 };
+	let aniso = if aniso.is_finite() { aniso } else { 0.0 };
 
 	let mut d_min = f64::INFINITY;
 	for p in 0..n {
@@ -355,7 +363,11 @@ fn add_mutual_reactance(
 			let dy = y[p] as f64 - y[q] as f64;
 			let rho = dx.hypot(dy);
 			let xpq = if rho > 0.0 {
-				x_nn * (d_min / rho).powf(alpha)
+				let envelope = x_nn * (d_min / rho).powf(alpha);
+				let osc = (beta * (rho / d_min - 1.0)).cos();
+				let phi = dy.atan2(dx);
+				let loc = 1.0 + aniso * (2.0 * phi).cos();
+				envelope * osc * loc
 			} else {
 				0.0
 			};
@@ -783,6 +795,64 @@ mod tests {
 		);
 	}
 
+	fn expected_xpq(
+		dx: f64,
+		dy: f64,
+		d_min: f64,
+		x_nn: f64,
+		alpha: f64,
+		beta: f64,
+		aniso: f64,
+	) -> f64 {
+		let rho = dx.hypot(dy);
+		if rho <= 0.0 {
+			return 0.0;
+		}
+		let envelope = x_nn * (d_min / rho).powf(alpha);
+		let osc = (beta * (rho / d_min - 1.0)).cos();
+		let phi = dy.atan2(dx);
+		envelope * osc * (1.0 + aniso * (2.0 * phi).cos())
+	}
+
+	fn pair_d_min(x: &[f32], y: &[f32]) -> f64 {
+		let n = x.len();
+		let mut d_min = f64::INFINITY;
+		for p in 0..n {
+			for q in 0..p {
+				let dx = x[p] as f64 - x[q] as f64;
+				let dy = y[p] as f64 - y[q] as f64;
+				let rho = dx.hypot(dy);
+				if rho > 0.0 && rho < d_min {
+					d_min = rho;
+				}
+			}
+		}
+		d_min
+	}
+
+	fn assert_x_kernel(
+		m: &MatchedS,
+		x: &[f32],
+		y: &[f32],
+		x_nn: f64,
+		alpha: f64,
+		beta: f64,
+		aniso: f64,
+	) {
+		let n = x.len();
+		let d_min = pair_d_min(x, y);
+		for p in 0..n {
+			close(m.r_im[p * n + p], 0.0, 0.0, "X_pp");
+			for q in 0..p {
+				let dx = x[p] as f64 - x[q] as f64;
+				let dy = y[p] as f64 - y[q] as f64;
+				let want = expected_xpq(dx, dy, d_min, x_nn, alpha, beta, aniso);
+				close(m.r_im[p * n + q], want, 1e-9, "X_pq");
+				close(m.r_im[q * n + p], want, 1e-9, "X_qp");
+			}
+		}
+	}
+
 	#[test]
 	fn chol_solves_spd_identity() {
 		let n = 3;
@@ -973,6 +1043,8 @@ mod tests {
 			2.0,
 			0.0,
 			0.0,
+			0.0,
+			0.0,
 		);
 		close(a.z0[0], b.z0[0], 0.0, "z0");
 		close(a.s_re[1], b.s_re[1], 0.0, "S12");
@@ -994,6 +1066,8 @@ mod tests {
 			&[0.0, 0.0],
 			x_nn,
 			2.0,
+			0.0,
+			0.0,
 			0.0,
 			0.0,
 		);
@@ -1030,7 +1104,9 @@ mod tests {
 		let y = [0.0f32, 0.25, -0.25];
 		let x_nn = 8.0;
 		let alpha = 2.0;
-		let m = MatchedS::from_gram_coupled(&p_re, &p_im, n, Z_REF, &x, &y, x_nn, alpha, 0.0, 0.0);
+		let m = MatchedS::from_gram_coupled(
+			&p_re, &p_im, n, Z_REF, &x, &y, x_nn, alpha, 0.0, 0.0, 0.0, 0.0,
+		);
 		assert!(m.residual < TAU, "residual {}", m.residual);
 
 		fn rho(i: usize, j: usize, x: &[f32], y: &[f32]) -> f64 {
@@ -1055,7 +1131,9 @@ mod tests {
 			"closest pair is strongest"
 		);
 
-		let m0 = MatchedS::from_gram_coupled(&p_re, &p_im, n, Z_REF, &x, &y, x_nn, 0.0, 0.0, 0.0);
+		let m0 = MatchedS::from_gram_coupled(
+			&p_re, &p_im, n, Z_REF, &x, &y, x_nn, 0.0, 0.0, 0.0, 0.0, 0.0,
+		);
 		close(m0.r_im[1], x_nn, 1e-12, "alpha0 X01");
 		close(m0.r_im[2], x_nn, 1e-12, "alpha0 X02");
 		close(m0.r_im[5], x_nn, 1e-12, "alpha0 X12");
@@ -1076,6 +1154,8 @@ mod tests {
 			3.0,
 			0.0,
 			0.0,
+			0.0,
+			0.0,
 		);
 		assert!(m.r_im.iter().all(|v| v.is_finite()), "X finite");
 		close(m.r_im[1], 0.0, 0.0, "coincident X01");
@@ -1088,7 +1168,9 @@ mod tests {
 	fn n1_common_zref_is_open() {
 		let p_re = [0.5f32];
 		let p_im = [0.0f32];
-		let m = MatchedS::from_gram_coupled(&p_re, &p_im, 1, Z_REF, &[], &[], 0.0, 0.0, Z_REF, 0.0);
+		let m = MatchedS::from_gram_coupled(
+			&p_re, &p_im, 1, Z_REF, &[], &[], 0.0, 0.0, 0.0, 0.0, Z_REF, 0.0,
+		);
 		close(m.z0[0], Z_REF, 0.0, "z0");
 		close(m.z0_im[0], 0.0, 0.0, "z0 im");
 		close(m.s_re[0], 0.0, 1e-12, "S11 re");
@@ -1102,7 +1184,9 @@ mod tests {
 		let p_re = [0.5f32];
 		let p_im = [0.0f32];
 		let zc = 40.0;
-		let m = MatchedS::from_gram_coupled(&p_re, &p_im, 1, Z_REF, &[], &[], 0.0, 0.0, zc, 0.0);
+		let m = MatchedS::from_gram_coupled(
+			&p_re, &p_im, 1, Z_REF, &[], &[], 0.0, 0.0, 0.0, 0.0, zc, 0.0,
+		);
 		let r = 50.0;
 		let s = (r - zc) / (r + zc);
 		close(m.s_re[0], s, 1e-12, "S11");
@@ -1117,7 +1201,7 @@ mod tests {
 		let zc_re = 50.0;
 		let zc_im = 10.0;
 		let m = MatchedS::from_gram_coupled(
-			&p_re, &p_im, 1, Z_REF, &[], &[], 0.0, 0.0, zc_re, zc_im,
+			&p_re, &p_im, 1, Z_REF, &[], &[], 0.0, 0.0, 0.0, 0.0, zc_re, zc_im,
 		);
 		// S = (Z - zc*)/(Z + zc) with Z = 50.
 		let num_re = 50.0 - zc_re;
@@ -1139,7 +1223,7 @@ mod tests {
 		let p_im = [0.0f32; 4];
 		let per = MatchedS::from_gram(&p_re, &p_im, 2, Z_REF);
 		let m = MatchedS::from_gram_coupled(
-			&p_re, &p_im, 2, Z_REF, &[], &[], 0.0, 0.0, Z_REF, 0.0,
+			&p_re, &p_im, 2, Z_REF, &[], &[], 0.0, 0.0, 0.0, 0.0, Z_REF, 0.0,
 		);
 		close(m.z0[0], Z_REF, 0.0, "z0_0");
 		close(m.z0[1], Z_REF, 0.0, "z0_1");
@@ -1152,7 +1236,7 @@ mod tests {
 		// Closed form S = (Z - zc I)(Z + zc I)^{-1} at zc = 40.
 		let zc = 40.0;
 		let m40 = MatchedS::from_gram_coupled(
-			&p_re, &p_im, 2, Z_REF, &[], &[], 0.0, 0.0, zc, 0.0,
+			&p_re, &p_im, 2, Z_REF, &[], &[], 0.0, 0.0, 0.0, 0.0, zc, 0.0,
 		);
 		let det = 90.0 * 90.0 - 12.5 * 12.5;
 		let s11 = (10.0 * 90.0 + 12.5 * (-12.5)) / det;
@@ -1162,5 +1246,85 @@ mod tests {
 		close(m40.s_re[2], s12, 1e-12, "S21");
 		close(m40.s_re[3], s11, 1e-12, "S22");
 		close(m40.s_im.iter().fold(0.0f64, |a, v| a.max(v.abs())), 0.0, 1e-12, "S im");
+	}
+
+	#[test]
+	fn collinear_beta_pi_flips_next_nearest() {
+		let n = 3;
+		let p_re = [0.5f32, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5];
+		let p_im = [0.0f32; 9];
+		let x = [0.0f32, 0.5, 1.0];
+		let y = [0.0f32, 0.0, 0.0];
+		let x_nn = 10.0;
+		let alpha = 2.0;
+		let beta = std::f64::consts::PI;
+		let m = MatchedS::from_gram_coupled(
+			&p_re, &p_im, n, Z_REF, &x, &y, x_nn, alpha, beta, 0.0, 0.0, 0.0,
+		);
+		assert_x_kernel(&m, &x, &y, x_nn, alpha, beta, 0.0);
+		close(m.r_im[1], x_nn, 1e-12, "X01 nn");
+		close(m.r_im[5], x_nn, 1e-12, "X12 nn");
+		close(m.r_im[2], -x_nn * 0.25, 1e-12, "X02 opposite sign");
+		assert!(m.r_im[2] * m.r_im[1] < 0.0, "next-nearest opposite sign");
+	}
+
+	#[test]
+	fn right_angle_aniso_splits_equal_distance() {
+		let n = 3;
+		let p_re = [0.5f32, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5];
+		let p_im = [0.0f32; 9];
+		let x = [0.0f32, 1.0, 0.0];
+		let y = [0.0f32, 0.0, 1.0];
+		let x_nn = 10.0;
+		let aniso = 0.5;
+		let m = MatchedS::from_gram_coupled(
+			&p_re, &p_im, n, Z_REF, &x, &y, x_nn, 2.0, 0.0, aniso, 0.0, 0.0,
+		);
+		assert_x_kernel(&m, &x, &y, x_nn, 2.0, 0.0, aniso);
+		close(m.r_im[1], x_nn * (1.0 + aniso), 1e-12, "X along +x");
+		close(m.r_im[2], x_nn * (1.0 - aniso), 1e-12, "X along +y");
+		assert!((m.r_im[1].abs() - m.r_im[2].abs()).abs() > 1.0);
+		close(m.r_im[1], m.r_im[3], 1e-12, "X01 = X10");
+		close(m.r_im[2], m.r_im[6], 1e-12, "X02 = X20");
+	}
+
+	#[test]
+	fn sunflower_like_cloud_matches_pair_formula() {
+		let n_vogel = 7;
+		let n = n_vogel + 3;
+		let gd = (5.0f64.sqrt() - 1.0) / 2.0;
+		let mut x = vec![0.0f32; n];
+		let mut y = vec![0.0f32; n];
+		for i in 0..n_vogel {
+			let t = 2.0 * std::f64::consts::PI * gd * (i + 1) as f64;
+			let r = t.sqrt() * 0.22;
+			x[i] = (r * t.cos()) as f32;
+			y[i] = (r * t.sin()) as f32;
+		}
+		x[n_vogel] = 0.0;
+		y[n_vogel] = 0.0;
+		x[n_vogel + 1] = 2.0;
+		y[n_vogel + 1] = 0.0;
+		x[n_vogel + 2] = 0.0;
+		y[n_vogel + 2] = 2.0;
+		let mut p_re = vec![0.0f32; n * n];
+		for p in 0..n {
+			p_re[p * n + p] = 0.5;
+		}
+		let p_im = vec![0.0f32; n * n];
+		let x_nn = 8.0;
+		let alpha = 2.0;
+		let beta = std::f64::consts::FRAC_PI_2;
+		let aniso = 0.4;
+		let m = MatchedS::from_gram_coupled(
+			&p_re, &p_im, n, Z_REF, &x, &y, x_nn, alpha, beta, aniso, 0.0, 0.0,
+		);
+		assert!(m.r_im.iter().all(|v| v.is_finite()), "X finite");
+		assert_x_kernel(&m, &x, &y, x_nn, alpha, beta, aniso);
+		let o = n_vogel;
+		assert!(
+			(m.r_im[o * n + o + 1] - m.r_im[o * n + o + 2]).abs() > 1e-9,
+			"equal-ρ x/y arms split"
+		);
 	}
 }

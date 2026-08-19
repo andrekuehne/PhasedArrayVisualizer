@@ -1,5 +1,5 @@
 /**
- * Matched S-matrix from the J0 radiated-power Gram (§6–8), including optional \(jX(\rho)\).
+ * Matched S-matrix from the J0 radiated-power Gram (§6–8), including optional \(jX(\Delta x,\Delta y)\).
  *
  * Run from the repo root:
  *   node --test tests/matched-s.test.js
@@ -99,7 +99,7 @@ describe('matched S from J0 Prad', () => {
 				const k = kernels[kind];
 				k.set_quadrature(8, 2);
 				k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
-				k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, 0, 0);
+				k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, 0, 0, 0, 0);
 				const z0 = k.take_z0();
 				const sRe = k.take_s_re();
 				const sIm = k.take_s_im();
@@ -131,7 +131,7 @@ describe('matched S from J0 Prad', () => {
 		const n = x.length;
 		k.set_quadrature(32, 2);
 		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, x, y, 0, 0, 0, 0);
+		k.form_matched_s(Z_REF, x, y, 0, 0, 0, 0, 0, 0);
 		const z0 = k.take_z0();
 		const sRe = k.take_s_re();
 		const sIm = k.take_s_im();
@@ -209,7 +209,7 @@ describe('matched S from J0 Prad', () => {
 		const k = kernels.simd;
 		k.set_quadrature(8, 2);
 		k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, 0, 0);
+		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, 0, 0, 0, 0);
 		const tRe = k.take_t_re();
 		const tIm = k.take_t_im();
 		close(tRe[0], 1, 1e-6, 'T11');
@@ -226,7 +226,7 @@ describe('matched S from J0 Prad', () => {
 		const n = x.length;
 		k.set_quadrature(32, 2);
 		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, x, y, 0, 0, 0, 0);
+		k.form_matched_s(Z_REF, x, y, 0, 0, 0, 0, 0, 0);
 		const tRe = k.take_t_re();
 		const tIm = k.take_t_im();
 		assert.equal(tRe.length, n * n);
@@ -290,7 +290,7 @@ describe('matched S from J0 Prad', () => {
 		const nn = x.length;
 		k.set_quadrature(32, 2);
 		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, x, y, 0, 0, 0, 0);
+		k.form_matched_s(Z_REF, x, y, 0, 0, 0, 0, 0, 0);
 		const tRe = k.take_t_re();
 		const tIm = k.take_t_im();
 		const theta = 30;
@@ -331,7 +331,7 @@ describe('matched S from J0 Prad', () => {
 		const n = x.length;
 		k.set_quadrature(24, 2);
 		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, x, y, 10, 2, 0, 0);
+		k.form_matched_s(Z_REF, x, y, 10, 2, 0, 0, 0, 0);
 		const sRe = k.take_s_re();
 		const sIm = k.take_s_im();
 		const z0Im = k.take_z0_im();
@@ -349,11 +349,43 @@ describe('matched S from J0 Prad', () => {
 		assert.ok(maxZim > 1e-6, `z0 should be complex, max|Im|=${maxZim}`);
 	});
 
+	test('right-angle Xnn with Location A splits equal-distance pairs', () => {
+		const k = kernels.simd;
+		const x = new Float32Array([0, 1, 0]);
+		const y = new Float32Array([0, 0, 1]);
+		const n = 3;
+		const xnn = 10;
+		const aniso = 0.5;
+		k.set_quadrature(24, 2);
+		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s(Z_REF, x, y, xnn, 2, 0, aniso, 0, 0);
+		const zIm = k.take_z_im();
+		close(zIm[1], xnn * (1 + aniso), 1e-6, 'X along +x');
+		close(zIm[2], xnn * (1 - aniso), 1e-6, 'X along +y');
+		close(zIm[1], zIm[n], 1e-12, 'X01 = X10');
+		close(zIm[2], zIm[2 * n], 1e-12, 'X02 = X20');
+		assert.ok(k.match_residual() < TAU, `residual ${k.match_residual()}`);
+	});
+
+	test('collinear Xnn with Oscillation β=π flips next-nearest sign', () => {
+		const k = kernels.simd;
+		const x = new Float32Array([0, 0.5, 1.0]);
+		const y = new Float32Array([0, 0, 0]);
+		const xnn = 10;
+		k.set_quadrature(24, 2);
+		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
+		k.form_matched_s(Z_REF, x, y, xnn, 2, Math.PI, 0, 0, 0);
+		const zIm = k.take_z_im();
+		close(zIm[1], xnn, 1e-6, 'X01 nn');
+		close(zIm[2], -xnn * 0.25, 1e-6, 'X02 opposite');
+		assert.ok(zIm[1] * zIm[2] < 0, 'next-nearest opposite sign');
+	});
+
 	test('N=1 common Zref: S = 0, T = 1', () => {
 		const k = kernels.simd;
 		k.set_quadrature(8, 2);
 		k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, Z_REF, 0);
+		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, 0, 0, Z_REF, 0);
 		close(k.take_z0()[0], Z_REF, 1e-5, 'z0');
 		close(k.take_z0_im()[0], 0, 1e-12, 'z0 im');
 		close(k.take_s_re()[0], 0, 1e-8, 'S11 re');
@@ -366,7 +398,7 @@ describe('matched S from J0 Prad', () => {
 		const zc = 40;
 		k.set_quadrature(8, 2);
 		k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, zc, 0);
+		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, 0, 0, zc, 0);
 		const r = k.take_z_re()[0];
 		const s = (r - zc) / (r + zc);
 		close(k.take_s_re()[0], s, 1e-8, 'S11');
@@ -380,7 +412,7 @@ describe('matched S from J0 Prad', () => {
 		const zcIm = 10;
 		k.set_quadrature(8, 2);
 		k.compute_j0(new Float32Array([0]), new Float32Array([0]), 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, zcRe, zcIm);
+		k.form_matched_s(Z_REF, new Float32Array([0]), new Float32Array([0]), 0, 0, 0, 0, zcRe, zcIm);
 		const zRe = k.take_z_re()[0];
 		const zIm = k.take_z_im()[0];
 		const numRe = zRe - zcRe;
@@ -404,12 +436,12 @@ describe('matched S from J0 Prad', () => {
 		const n = x.length;
 		k.set_quadrature(32, 2);
 		k.compute_j0(x, y, 1, PATTERN_ISOTROPIC, 0);
-		k.form_matched_s(Z_REF, x, y, 0, 0, 0, 0);
+		k.form_matched_s(Z_REF, x, y, 0, 0, 0, 0, 0, 0);
 		const sPer = k.take_s_re();
 		const sImPer = k.take_s_im();
 		let maxPer = 0;
 		for (let i = 0; i < n; i++) maxPer = Math.max(maxPer, mag(sPer[i * n + i], sImPer[i * n + i]));
-		k.form_matched_s(Z_REF, x, y, 0, 0, Z_REF, 0);
+		k.form_matched_s(Z_REF, x, y, 0, 0, 0, 0, Z_REF, 0);
 		const z0 = k.take_z0();
 		const z0Im = k.take_z0_im();
 		const sRe = k.take_s_re();

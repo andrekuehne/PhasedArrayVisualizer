@@ -60,7 +60,7 @@ export class RadiatedPowerKernel {
     fill_isolated(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number): void;
     fill_isolated_range(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number, sample0: number, sample_count: number): void;
     form_gram(): void;
-    form_matched_s(z_ref: number, x: Float32Array, y: Float32Array, x_nn: number, alpha: number, z_common_re: number, z_common_im: number): void;
+    form_matched_s(z_ref: number, x: Float32Array, y: Float32Array, x_nn: number, alpha: number, beta: number, aniso: number, z_common_re: number, z_common_im: number): void;
     match_iterations(): number;
     match_residual(): number;
     n_elements(): number;
@@ -177,7 +177,7 @@ export interface InitOutput {
     readonly radiatedpowerkernel_fill_isolated: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
     readonly radiatedpowerkernel_fill_isolated_range: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
     readonly radiatedpowerkernel_form_gram: (a: number) => void;
-    readonly radiatedpowerkernel_form_matched_s: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
+    readonly radiatedpowerkernel_form_matched_s: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => void;
     readonly radiatedpowerkernel_match_iterations: (a: number) => number;
     readonly radiatedpowerkernel_match_residual: (a: number) => number;
     readonly radiatedpowerkernel_n_elements: (a: number) => number;
