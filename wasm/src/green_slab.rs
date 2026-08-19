@@ -2,7 +2,7 @@
 //!
 //! Horizontal short dipole (\(+\hat x\)) in air at height \(h\) over a grounded
 //! dielectric slab. Same \(Z_\mathrm{pair}\)/\(F^\mathrm{iso}\) interface as WP1.
-//! No wasm-bindgen. Production PEC path stays `green.rs`.
+//! Bindgen lives in `element.rs` / `lib.rs`. Closed-form PEC stays `green.rs`.
 //!
 //! Stack: air \(z>0\); dipole at \(z=h\); dielectric \(-h_\mathrm{sub}<z<0\)
 //! with \(\varepsilon=\varepsilon_r(1-j\tan\delta)\); PEC at \(z=-h_\mathrm{sub}\).
@@ -57,7 +57,7 @@ impl SlabEnv {
 		Cpx::new(self.eps_r, -self.eps_r * self.tan_delta.max(0.0))
 	}
 
-	fn ok(self) -> bool {
+	pub fn ok(self) -> bool {
 		self.eps_r >= 1.0
 			&& self.h_sub > 0.0
 			&& self.tan_delta >= 0.0

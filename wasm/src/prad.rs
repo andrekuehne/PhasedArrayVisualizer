@@ -467,8 +467,8 @@ impl PradState {
 		});
 	}
 
-	#[cfg(test)]
-	fn fill_green_slab_dipole_z(
+	/// Unique-lag slab-dipole \(Z\) into `r_re`/`r_im`. No Gram, no `from_z`.
+	pub fn fill_green_slab_dipole_z(
 		&mut self,
 		x: &[f32],
 		y: &[f32],
@@ -476,19 +476,26 @@ impl PradState {
 		h: f32,
 		ell: f32,
 		a: f32,
-		env: crate::green_slab::SlabEnv,
+		eps_r: f32,
+		h_sub: f32,
+		tan_delta: f32,
 	) {
 		let h = h as f64;
 		let ell = ell as f64;
 		let a = a as f64;
 		let fs = frequency_scale as f64;
+		let env = crate::green_slab::SlabEnv {
+			eps_r: eps_r as f64,
+			h_sub: h_sub as f64,
+			tan_delta: tan_delta as f64,
+		};
 		self.fill_green_pec_z_with(x, y, |dx, dy| {
 			crate::green_slab::z_pair_slab_dipole(dx, dy, h, ell, a, fs, env)
 		});
 	}
 
-	#[cfg(test)]
-	fn form_green_slab_dipole(
+	/// Unique-lag slab-dipole \(Z\), then [`MatchedS::from_z`]. No Gram.
+	pub fn form_green_slab_dipole(
 		&mut self,
 		x: &[f32],
 		y: &[f32],
@@ -496,12 +503,24 @@ impl PradState {
 		h: f32,
 		ell: f32,
 		a: f32,
-		env: crate::green_slab::SlabEnv,
+		eps_r: f32,
+		h_sub: f32,
+		tan_delta: f32,
 		z_ref: f32,
 		z_common_re: f32,
 		x_self: f64,
 	) {
-		self.fill_green_slab_dipole_z(x, y, frequency_scale, h, ell, a, env);
+		self.fill_green_slab_dipole_z(
+			x,
+			y,
+			frequency_scale,
+			h,
+			ell,
+			a,
+			eps_r,
+			h_sub,
+			tan_delta,
+		);
 		self.form_from_z(z_ref, z_common_re, x_self);
 	}
 
@@ -1463,11 +1482,19 @@ mod tests {
 		let h = DEFAULT_H as f32;
 		let ell = DEFAULT_ELL as f32;
 		let a = DEFAULT_A as f32;
-		let env = SlabEnv::DEFAULT;
+		let env_src = SlabEnv::DEFAULT;
+		let eps_r = env_src.eps_r as f32;
+		let h_sub = env_src.h_sub as f32;
+		let tan_delta = env_src.tan_delta as f32;
+		let env = SlabEnv {
+			eps_r: eps_r as f64,
+			h_sub: h_sub as f64,
+			tan_delta: tan_delta as f64,
+		};
 		let (x, y) = rect_xy(4, 4, 0.5, 0.5);
 		let mut uniq = PradState::new();
 		let mut naive = PradState::new();
-		uniq.fill_green_slab_dipole_z(&x, &y, 1.0, h, ell, a, env);
+		uniq.fill_green_slab_dipole_z(&x, &y, 1.0, h, ell, a, eps_r, h_sub, tan_delta);
 		fill_green_slab_dipole_z_naive(&mut naive, &x, &y, 1.0, h, ell, a, env);
 		assert_eq!(uniq.n_unique_lag, 16, "4×4 lattice U = nx ny");
 		let mut max_d = 0.0f64;
@@ -1505,7 +1532,9 @@ mod tests {
 			h,
 			ell,
 			a,
-			SlabEnv::DEFAULT,
+			SlabEnv::DEFAULT.eps_r as f32,
+			SlabEnv::DEFAULT.h_sub as f32,
+			SlabEnv::DEFAULT.tan_delta as f32,
 			Z_REF as f32,
 			Z_REF as f32,
 			0.0,

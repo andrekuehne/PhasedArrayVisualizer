@@ -7,11 +7,11 @@ import {FarfieldDomains} from "./phasedarray/farfield.js"
 import {GeometryViews} from "./phasedarray/geometry-views.js"
 import {SteeringDomains} from "./phasedarray/steering.js"
 import {Illuminations} from "./phasedarray/illumination.js"
-import {ElementCosN, ElementGreenPec, ElementTypes, exponentFromPeakDbi, MIN_ELEMENT_GAIN_DBI, PATTERN_GREEN_PEC} from "./phasedarray/element.js"
+import {ElementCosN, ElementGreenPec, ElementGreenSlab, ElementTypes, exponentFromPeakDbi, MIN_ELEMENT_GAIN_DBI, PATTERN_GREEN_PEC, PATTERN_GREEN_SLAB} from "./phasedarray/element.js"
 import {Tapers} from "./phasedarray/tapers.js"
 import {defaultWatts, formatPower, formatPowerValue, isPowerScope, isPowerUnit, wattsFrom} from "./phasedarray/power.js"
 import {GREEN_PEC_AUTO_ISOLATE_N, MATCHED_AUTO_ISOLATE_N, nMuFromGeometry, Z_REF} from "./phasedarray/matched.js"
-import {getRadiatedPowerKernel, zSelfPecDipole} from "./wasm/init.js"
+import {getRadiatedPowerKernel, zSelfPecDipole, zSelfSlabDipole} from "./wasm/init.js"
 import {linspace} from "./util.js";
 /** @import { SceneQueue } from "./scene/scene-queue.js" */
 
@@ -66,6 +66,10 @@ export class SceneControlPhasedArray extends SceneControl{
 		this._matchedEll = NaN;
 		this._matchedA = NaN;
 		this._matchedGreenZ0 = NaN;
+		this._matchedXSelf = NaN;
+		this._matchedEpsR = NaN;
+		this._matchedHSub = NaN;
+		this._matchedTanDelta = NaN;
 		this._steerFreq = NaN;
 		this.geometryControl = new SceneControlGeometry(this);
 		this.taperControl = new SceneControlAllTapers(this);
@@ -141,7 +145,7 @@ export class SceneControlPhasedArray extends SceneControl{
 			if (epsYDiv) epsYDiv.style.display = 'none';
 			if (attDiv) attDiv.style.display = 'none';
 		};
-		if (this.isGreenPec()){
+		if (this.isGreenElement()){
 			hideMatch();
 			return;
 		}
@@ -171,6 +175,17 @@ export class SceneControlPhasedArray extends SceneControl{
 	isGreenPec(){
 		return this.elementControl != null && this.elementControl.selected_class() === ElementGreenPec;
 	}
+	isGreenSlab(){
+		return this.elementControl != null && this.elementControl.selected_class() === ElementGreenSlab;
+	}
+	isGreenElement(){
+		return this.isGreenPec() || this.isGreenSlab();
+	}
+	greenMatchModel(){
+		if (this.isGreenPec()) return 'green-pec';
+		if (this.isGreenSlab()) return 'green-slab';
+		return this.matchModel();
+	}
 	/**
 	 * Map legacy URL coupling=matched (+ match-style) onto the Matching select.
 	 */
@@ -191,7 +206,7 @@ export class SceneControlPhasedArray extends SceneControl{
 		if (typeof this.parent.update_url_parameters === 'function') this.parent.update_url_parameters();
 	}
 	couplingMode(){
-		if (this.isGreenPec()){
+		if (this.isGreenElement()){
 			const n = this.pa ? this.pa.size : 0;
 			return n > GREEN_PEC_AUTO_ISOLATE_N ? 'isolated' : 'matched';
 		}
@@ -207,7 +222,7 @@ export class SceneControlPhasedArray extends SceneControl{
 	 * @param {number} n
 	 */
 	applyCouplingSizeSafeguard(n){
-		if (this.isGreenPec()) return;
+		if (this.isGreenElement()) return;
 		if (!(n > MATCHED_AUTO_ISOLATE_N) || this.couplingMode() !== 'matched') return;
 		this.find_element('coupling').value = 'isolated';
 		this.sync_mode_radios();
@@ -322,6 +337,59 @@ export class SceneControlPhasedArray extends SceneControl{
 			this._matchedGreenZ0 = zc;
 			this._matchedXSelf = xSelf;
 			this._matchedModel = 'green-pec';
+			return;
+		}
+		if (kind === PATTERN_GREEN_SLAB){
+			if (n > GREEN_PEC_AUTO_ISOLATE_N) return;
+			const h = ep.h;
+			const ell = ep.ell;
+			const a = ep.a;
+			const epsR = ep.epsR;
+			const hSub = ep.hSub;
+			const tanDelta = ep.tanDelta;
+			const zc = ep.z0;
+			const xSelf = ep.xself;
+			if (
+				pa.tRe && pa.tRe.length === n * n
+				&& pa.zRe && pa.zRe.length === n * n
+				&& this._matchedFreq === freq
+				&& this._matchedKind === kind
+				&& this._matchedH === h
+				&& this._matchedEll === ell
+				&& this._matchedA === a
+				&& this._matchedEpsR === epsR
+				&& this._matchedHSub === hSub
+				&& this._matchedTanDelta === tanDelta
+				&& this._matchedGreenZ0 === zc
+				&& this._matchedXSelf === xSelf
+			) return;
+			const kernel = getRadiatedPowerKernel();
+			kernel.form_green_slab_dipole(
+				pa.geometry.x, pa.geometry.y, freq,
+				h, ell, a, epsR, hSub, tanDelta,
+				Z_REF, zc, xSelf
+			);
+			pa.set_matched_basis(
+				kernel.take_z0(),
+				kernel.take_s_re(),
+				kernel.take_s_im(),
+				kernel.take_t_re(),
+				kernel.take_t_im(),
+				kernel.take_z0_im(),
+				kernel.take_z_re(),
+				kernel.take_z_im()
+			);
+			this._matchedFreq = freq;
+			this._matchedKind = kind;
+			this._matchedH = h;
+			this._matchedEll = ell;
+			this._matchedA = a;
+			this._matchedEpsR = epsR;
+			this._matchedHSub = hSub;
+			this._matchedTanDelta = tanDelta;
+			this._matchedGreenZ0 = zc;
+			this._matchedXSelf = xSelf;
+			this._matchedModel = 'green-slab';
 			return;
 		}
 		const model = this.matchModel();
@@ -446,7 +514,7 @@ export class SceneControlPhasedArray extends SceneControl{
 				this.pa.compute_illumination();
 			});
 		}
-		const greenOversize = this.isGreenPec()
+		const greenOversize = this.isGreenElement()
 			&& this.pa != null
 			&& this.pa.size > GREEN_PEC_AUTO_ISOLATE_N
 			&& !this.geometryControl.calculationWaiting;
@@ -463,8 +531,8 @@ export class SceneControlPhasedArray extends SceneControl{
 				|| this.geometryControl.calculationWaiting
 				|| this.elementControl.calculationWaiting
 				|| this._matchedFreq !== freq
-				|| this._matchedModel !== (this.isGreenPec() ? 'green-pec' : this.matchModel())
-				|| (!this.isGreenPec() && (
+				|| this._matchedModel !== this.greenMatchModel()
+				|| (!this.isGreenElement() && (
 					this._matchedXnn !== this.couplingXnn()
 					|| this._matchedAlpha !== this.couplingAlpha()
 					|| this._matchedBeta !== this.couplingBeta()
@@ -477,7 +545,7 @@ export class SceneControlPhasedArray extends SceneControl{
 				));
 			if (basisDirty){
 				queue.add('Computing matched S...', () => {
-					if (this.isGreenPec()){
+					if (this.isGreenElement()){
 						if (this.pa.size > GREEN_PEC_AUTO_ISOLATE_N) return;
 						this.compute_matched_basis(freq);
 						return;
@@ -1126,7 +1194,7 @@ export class SceneControlElement extends SceneControlWithSelectorAutoBuild{
 		const note = document.createElement('div');
 		note.className = 'form-note';
 		note.id = parent.prepend + '-element-green-note';
-		note.textContent = 'S,T from the PEC Green function. First build is about 2 s at 32×32.';
+		note.textContent = 'S,T from the Green function. First build is about 2 s at 32×32 for PEC; slab is slower.';
 		note.title = 'Unique-lag PEC kernel fills Z; Kurokawa S,T from that Z at the common real Z0. The 32×32 LU is about 2 s in WASM.';
 		note.style.display = 'none';
 		host.appendChild(note);
@@ -1233,22 +1301,41 @@ export class SceneControlElement extends SceneControlWithSelectorAutoBuild{
 		this.nInput.value = exponentFromPeakDbi(g).toFixed(3);
 	}
 	update_green_note(){
-		const isPec = this.selected_class() === ElementGreenPec;
-		if (this.greenNote) this.greenNote.style.display = isPec ? 'block' : 'none';
-		if (this.matchDiv) this.matchDiv.style.display = isPec ? 'flex' : 'none';
+		const cls = this.selected_class();
+		const isPec = cls === ElementGreenPec;
+		const isSlab = cls === ElementGreenSlab;
+		const isGreen = isPec || isSlab;
+		if (this.greenNote){
+			this.greenNote.style.display = isGreen ? 'block' : 'none';
+			if (isSlab){
+				this.greenNote.textContent = 'S,T from the grounded-slab Green function (Sommerfeld). First build can take seconds at 32×32.';
+				this.greenNote.title = 'Unique-lag slab kernel fills Z; Kurokawa S,T from that Z at the common real Z0. Surface-wave power is not in the array-factor pattern.';
+			}
+			else if (isPec){
+				this.greenNote.textContent = 'S,T from the PEC Green function. First build is about 2 s at 32×32.';
+				this.greenNote.title = 'Unique-lag PEC kernel fills Z; Kurokawa S,T from that Z at the common real Z0. The 32×32 LU is about 2 s in WASM.';
+			}
+		}
+		if (this.matchDiv) this.matchDiv.style.display = isGreen ? 'flex' : 'none';
 		const typeEle = this.find_element('element-type', false);
 		if (typeEle){
-			if (isPec && ElementGreenPec.help) typeEle.title = ElementGreenPec.help;
+			if (isGreen && cls.help) typeEle.title = cls.help;
 			else typeEle.removeAttribute('title');
 		}
 	}
 	apply_green_match(){
-		if (this.selected_class() !== ElementGreenPec) return;
+		const cls = this.selected_class();
+		if (cls !== ElementGreenPec && cls !== ElementGreenSlab) return;
 		const ep = this.build_active_object();
 		const freq = typeof this.parent.frequencyScale === 'function' ? this.parent.frequencyScale() : 1;
 		let z;
 		try {
-			z = zSelfPecDipole(ep.h, ep.ell, ep.a, freq);
+			if (cls === ElementGreenSlab){
+				z = zSelfSlabDipole(ep.h, ep.ell, ep.a, freq, ep.epsR, ep.hSub, ep.tanDelta);
+			}
+			else{
+				z = zSelfPecDipole(ep.h, ep.ell, ep.a, freq);
+			}
 		}
 		catch {
 			return;
@@ -1256,7 +1343,7 @@ export class SceneControlElement extends SceneControlWithSelectorAutoBuild{
 		const re = z[0];
 		const im = z[1];
 		if (!Number.isFinite(re) || !Number.isFinite(im) || !(re > 0)) return;
-		const z0Ctrl = ElementGreenPec.controls['element-z0'];
+		const z0Ctrl = cls.controls['element-z0'];
 		let zc = re;
 		if (z0Ctrl.min != null && zc < z0Ctrl.min) zc = z0Ctrl.min;
 		if (z0Ctrl.max != null && zc > z0Ctrl.max) zc = z0Ctrl.max;

@@ -10,7 +10,7 @@ import {readFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {after, before, describe, test} from 'node:test';
-import {GREEN_PEC_DEFAULT_A, GREEN_PEC_DEFAULT_ELL, GREEN_PEC_DEFAULT_H, PATTERN_ISOTROPIC} from '../js/phasedarray/element.js';
+import {GREEN_PEC_DEFAULT_A, GREEN_PEC_DEFAULT_ELL, GREEN_PEC_DEFAULT_H, GREEN_SLAB_DEFAULT_EPS_R, GREEN_SLAB_DEFAULT_H_SUB, GREEN_SLAB_DEFAULT_TAN_DELTA, PATTERN_ISOTROPIC} from '../js/phasedarray/element.js';
 import {alignPhaseCycles, conjugatePhaseCycles, gemv, identityT, nMuFromGeometry} from '../js/phasedarray/matched.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -659,5 +659,96 @@ describe('matched S from Green PEC dipole', () => {
 		assert.ok(maxSym < 1e-9, `reciprocity ${maxSym}`);
 		assert.ok(maxSii > 0 && maxSii < 1, `max |Sii|=${maxSii}`);
 		console.log(printSiiGrid(sRe, nx, ny).join('\n'));
+	});
+});
+
+describe('matched S from Green slab dipole', () => {
+	/** @type {import('../js/wasm/simd/farfield_kernel.js').RadiatedPowerKernel} */
+	let k;
+	/** @type {typeof import('../js/wasm/simd/farfield_kernel.js').z_self_slab_dipole} */
+	let zSelf;
+
+	before(async () => {
+		const glue = await loadGlue('simd');
+		k = new glue.RadiatedPowerKernel();
+		zSelf = glue.z_self_slab_dipole;
+	});
+
+	after(() => {
+		if (k && typeof k.free === 'function') k.free();
+	});
+
+	test('N=1: Z is self kernel, Match cancels Im(Z11) and opens S (no Gram)', () => {
+		const gramLen = k.take_re().length;
+		const h = Math.fround(GREEN_PEC_DEFAULT_H);
+		const ell = Math.fround(GREEN_PEC_DEFAULT_ELL);
+		const a = Math.fround(GREEN_PEC_DEFAULT_A);
+		const epsR = Math.fround(GREEN_SLAB_DEFAULT_EPS_R);
+		const hSub = Math.fround(GREEN_SLAB_DEFAULT_H_SUB);
+		const tanDelta = Math.fround(GREEN_SLAB_DEFAULT_TAN_DELTA);
+		const selfZ = zSelf(h, ell, a, 1, epsR, hSub, tanDelta);
+		assert.ok(selfZ[0] > 0 && Number.isFinite(selfZ[1]), 'Z11 finite');
+		k.form_green_slab_dipole(
+			new Float32Array([0]),
+			new Float32Array([0]),
+			1,
+			h, ell, a, epsR, hSub, tanDelta,
+			Z_REF,
+			selfZ[0],
+			-selfZ[1]
+		);
+		assert.equal(k.n_elements(), 1);
+		assert.equal(k.take_re().length, gramLen, 'Gram unused');
+		close(k.take_z_im()[0], 0, 1e-9, 'X11 cancelled');
+		close(k.take_z0()[0], selfZ[0], 1e-4, 'z0 = Re Z11');
+		const magS = mag(k.take_s_re()[0], k.take_s_im()[0]);
+		assert.ok(magS < 1e-6, `|S11| after cancel ${magS}`);
+	});
+
+	test('8×8 λ/2: S reciprocal, Sii finite, no Gram', () => {
+		const nx = 8;
+		const ny = 8;
+		const {x, y} = rectArray(nx, ny, 0.5, 0.5);
+		const n = x.length;
+		const gramLen = k.take_re().length;
+		k.form_green_slab_dipole(
+			x, y, 1,
+			GREEN_PEC_DEFAULT_H,
+			GREEN_PEC_DEFAULT_ELL,
+			GREEN_PEC_DEFAULT_A,
+			GREEN_SLAB_DEFAULT_EPS_R,
+			GREEN_SLAB_DEFAULT_H_SUB,
+			GREEN_SLAB_DEFAULT_TAN_DELTA,
+			Z_REF,
+			Z_REF,
+			0
+		);
+		assert.equal(k.n_elements(), n);
+		assert.equal(k.take_re().length, gramLen, 'Gram unused');
+		const sRe = k.take_s_re();
+		const sIm = k.take_s_im();
+		const zRe = k.take_z_re();
+		const zIm = k.take_z_im();
+		assert.equal(sRe.length, n * n);
+		assert.equal(zRe.length, n * n);
+		let maxSym = 0;
+		let maxSii = 0;
+		for (let i = 0; i < n; i++){
+			const sii = mag(sRe[i * n + i], sIm[i * n + i]);
+			assert.ok(Number.isFinite(sii), `Sii ${i}`);
+			maxSii = Math.max(maxSii, sii);
+			assert.ok(Number.isFinite(zRe[i * n + i]) && zRe[i * n + i] > 0, `Re Zii ${i}`);
+			for (let j = i + 1; j < n; j++){
+				const a = i * n + j;
+				const b = j * n + i;
+				maxSym = Math.max(
+					maxSym,
+					Math.hypot(sRe[a] - sRe[b], sIm[a] - sIm[b]),
+					Math.hypot(zRe[a] - zRe[b], zIm[a] - zIm[b])
+				);
+			}
+		}
+		assert.ok(maxSym < 1e-9, `reciprocity ${maxSym}`);
+		assert.ok(maxSii > 0 && Number.isFinite(maxSii), `max |Sii|=${maxSii}`);
 	});
 });

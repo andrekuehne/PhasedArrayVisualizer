@@ -9,7 +9,7 @@ import {readFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {before, describe, test} from 'node:test';
-import {exponentFromPeakDbi, PATTERN_COS_N, PATTERN_ISOTROPIC, PATTERN_GREEN_PEC, GREEN_PEC_DEFAULT_H, GREEN_PEC_DEFAULT_ELL, ElementGreenPec} from '../js/phasedarray/element.js';
+import {exponentFromPeakDbi, PATTERN_COS_N, PATTERN_ISOTROPIC, PATTERN_GREEN_PEC, PATTERN_GREEN_SLAB, GREEN_PEC_DEFAULT_H, GREEN_PEC_DEFAULT_ELL, GREEN_SLAB_DEFAULT_EPS_R, GREEN_SLAB_DEFAULT_H_SUB, GREEN_SLAB_DEFAULT_TAN_DELTA, ElementGreenPec, ElementGreenSlab} from '../js/phasedarray/element.js';
 import {FarfieldLudwig3, FarfieldSpherical, FarfieldUV} from '../js/phasedarray/farfield.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -240,5 +240,79 @@ describe('WASM green PEC pattern apply', () => {
 		assert.equal(pars.elementKind, PATTERN_GREEN_PEC);
 		assert.equal(pars.elementH, GREEN_PEC_DEFAULT_H);
 		assert.equal(pars.elementEll, GREEN_PEC_DEFAULT_ELL);
+	});
+});
+
+describe('WASM green slab pattern apply', () => {
+	/** @type {Awaited<ReturnType<typeof loadGlue>>} */
+	let glue;
+
+	before(async () => {
+		glue = await loadGlue();
+	});
+
+	test('zeros UV samples outside the unit circle', () => {
+		const uv = new FarfieldUV(5, 5, 1, 1.5);
+		fill(uv, () => 1);
+		const flat = flatten(uv);
+		glue.apply_green_slab_pattern(
+			DOMAIN_UV,
+			Float32Array.from(uv.u),
+			Float32Array.from(uv.v),
+			flat,
+			GREEN_PEC_DEFAULT_H,
+			GREEN_PEC_DEFAULT_ELL,
+			1,
+			GREEN_SLAB_DEFAULT_EPS_R,
+			GREEN_SLAB_DEFAULT_H_SUB,
+			GREEN_SLAB_DEFAULT_TAN_DELTA
+		);
+		const [p1] = uv.meshPoints;
+		for (let iv = 0; iv < uv.vPoints; iv++){
+			for (let iu = 0; iu < uv.uPoints; iu++){
+				const r2 = uv.u[iu] ** 2 + uv.v[iv] ** 2;
+				const val = flat[iv * p1 + iu];
+				if (r2 >= 1) assert.equal(val, 0);
+				else assert.ok(val > 0, `inside (${uv.u[iu]}, ${uv.v[iv]})`);
+			}
+		}
+	});
+
+	test('default env: boresight |F|^2 > 0', () => {
+		const theta = Float32Array.from([0]);
+		const phi = Float32Array.from([0]);
+		const total = new Float32Array(1).fill(1);
+		const peak = glue.apply_green_slab_pattern(
+			DOMAIN_SPHERICAL,
+			theta,
+			phi,
+			total,
+			GREEN_PEC_DEFAULT_H,
+			GREEN_PEC_DEFAULT_ELL,
+			1,
+			GREEN_SLAB_DEFAULT_EPS_R,
+			GREEN_SLAB_DEFAULT_H_SUB,
+			GREEN_SLAB_DEFAULT_TAN_DELTA
+		);
+		assert.ok(total[0] > 0 && Number.isFinite(total[0]));
+		assert.ok(peak > 0 && Number.isFinite(peak));
+	});
+
+	test('create_parameters passes Green slab kind and env defaults', () => {
+		const ff = new FarfieldSpherical(3, 3, 1.2);
+		const pa = {
+			geometry: {x: [0], y: [0]},
+			create_farfield_vectors(){
+				return [new Float32Array([0]), new Float32Array([1])];
+			},
+			elementPattern: new ElementGreenSlab(),
+		};
+		const pars = ff.create_parameters(pa);
+		assert.equal(pars.elementKind, PATTERN_GREEN_SLAB);
+		assert.equal(pars.elementH, GREEN_PEC_DEFAULT_H);
+		assert.equal(pars.elementEll, GREEN_PEC_DEFAULT_ELL);
+		assert.equal(pars.elementEpsR, GREEN_SLAB_DEFAULT_EPS_R);
+		assert.equal(pars.elementHSub, GREEN_SLAB_DEFAULT_H_SUB);
+		assert.equal(pars.elementTanDelta, GREEN_SLAB_DEFAULT_TAN_DELTA);
 	});
 });

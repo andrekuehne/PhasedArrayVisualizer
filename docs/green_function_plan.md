@@ -14,6 +14,12 @@ a toy for isotropic / \(\cos^n\). \(Z\) from `form_green_pec_dipole`, pattern fr
 \(X_\mathrm{self}=-\Im Z_{11}\) of the isolated self kernel. Auto-isolate Green LU
 at \(N>1024\); 32×32 stays matched.
 
+**Green slab (implemented):** Element dropdown option **Slab dipole**. Same matching
+hide / Match / auto-isolate as PEC. Extra controls \(\varepsilon_r,h_\mathrm{sub},\tan\delta\).
+\(Z\) from `form_green_slab_dipole`, pattern from `apply_green_slab_pattern`.
+Power rows: isolated Radiated / Surface wave / Substrate loss / Closure at 1 A.
+EIRP stays \(D\times P_\mathrm{accepted}\). Surface-wave power is not in the AF.
+
 **Agent rule:** complete **one** work package per session. Do not start the next WP.
 End with the handoff block so the following agent can load this file plus the
 listed paths only.
@@ -644,6 +650,22 @@ WP7b: Element "Slab dipole", controls (h,ℓ,a,ε_r,h_sub,tanδ,z0,xself),
   form_green_slab_dipole bindgen, apply_green_slab_pattern,
   power rows Radiated / Surface wave / Substrate loss / Closure residual.
   Do not change eirp = dirMax * pAcc.
+```
+
+### WP7b results (implemented)
+
+- Files: `js/phasedarray/element.js` (`ElementGreenSlab`, `PATTERN_GREEN_SLAB`); `js/index-scenes.js` (`isGreenElement`, `form_green_slab_dipole`); `js/phasedarray/farfield.js` + `js/wasm/init.js`; `wasm/src/element.rs` (`apply_green_slab_pattern`, `z_self_slab_dipole`, `slab_dipole_power_budget_wasm`); `wasm/src/prad.rs` / `lib.rs` bindgen of `form_green_slab_dipole`. Power rows in `index.html` / `js/index.js`. Rebuild: `./wasm/build.ps1`.
+- GUI: Element **Slab dipole** with \(h,\ell,a,\varepsilon_r,h_\mathrm{sub},\tan\delta,z_c,X_\mathrm{self}\). Matching hidden. Match sets \(z_c=\Re Z_{11}\) and \(X_\mathrm{self}=-\Im Z_{11}\) of the isolated slab self kernel. Auto-isolate at \(N>1024\) (same as PEC). Surface-wave power is not in the AF pattern.
+- Power: Radiated / Surface wave / Substrate loss / Closure residual from `slab_dipole_power_budget` at \(|I|=1\,\mathrm{A}\). **EIRP stays** `dirMax * pAcc`.
+- Tests: `cargo test --manifest-path wasm/Cargo.toml` (`element::tests::green_slab_*`); `node --test tests/matched-s.test.js`; `node --test tests/farfield-directivity.test.js`.
+
+```text
+WP7b done. Next: WP8 two-slot patch.
+API: form_green_slab_dipole / apply_green_slab_pattern / z_self_slab_dipole
+     slab_dipole_power_budget_wasm -> [re_z_self, p_rad, p_sw, p_diss, closure]
+Element: Slab dipole (PATTERN_GREEN_SLAB)
+EIRP: unchanged dirMax * pAcc
+Radiator: WP1 +x short dipole. Slot is WP8.
 ```
 
 ---

@@ -1,4 +1,7 @@
 use crate::green::{f_iso_pec_dipole_power, z_pair_pec_dipole};
+use crate::green_slab::{
+	f_iso_slab_dipole_power, slab_dipole_power_budget, z_pair_slab_dipole, SlabEnv,
+};
 use crate::metrics::{boresight_cosine, direction_theta_phi};
 use wasm_bindgen::prelude::*;
 
@@ -110,6 +113,126 @@ pub fn apply_green_pec_pattern(
 			let factor = match direction_theta_phi(domain, ax1[i1], a2) {
 				Some((theta, phi)) => {
 					let p = f_iso_pec_dipole_power(theta, phi, h, ell, freq_scale);
+					if p.is_finite() {
+						p as f32
+					} else {
+						0.0
+					}
+				}
+				None => 0.0,
+			};
+			let t = total[idx] * factor;
+			total[idx] = t;
+			if t > max_value {
+				max_value = t;
+			}
+		}
+	}
+	max_value
+}
+
+fn slab_env_or_none(eps_r: f64, h_sub: f64, tan_delta: f64) -> Option<SlabEnv> {
+	let env = SlabEnv {
+		eps_r,
+		h_sub,
+		tan_delta,
+	};
+	if env.ok() {
+		Some(env)
+	} else {
+		None
+	}
+}
+
+/// Isolated slab-dipole self impedance \(Z_{11}\) in ohms: `[re, im]`.
+#[wasm_bindgen]
+pub fn z_self_slab_dipole(
+	h: f64,
+	ell: f64,
+	a: f64,
+	freq_scale: f64,
+	eps_r: f64,
+	h_sub: f64,
+	tan_delta: f64,
+) -> Box<[f64]> {
+	let env = match slab_env_or_none(eps_r, h_sub, tan_delta) {
+		Some(e) => e,
+		None => return Box::from([f64::NAN, f64::NAN]),
+	};
+	let (re, im) = z_pair_slab_dipole(0.0, 0.0, h, ell, a, freq_scale, env);
+	Box::from([re, im])
+}
+
+/// Isolated-element slab power budget at \(|I|=1\,\mathrm{A}\):
+/// `[re_z_self, p_rad, p_sw, p_diss, closure_residual]`.
+#[wasm_bindgen]
+pub fn slab_dipole_power_budget_wasm(
+	h: f64,
+	ell: f64,
+	a: f64,
+	freq_scale: f64,
+	eps_r: f64,
+	h_sub: f64,
+	tan_delta: f64,
+) -> Box<[f64]> {
+	let env = match slab_env_or_none(eps_r, h_sub, tan_delta) {
+		Some(e) => e,
+		None => {
+			return Box::from([f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN]);
+		}
+	};
+	let b = slab_dipole_power_budget(h, ell, a, freq_scale, env);
+	Box::from([
+		b.re_z_self,
+		b.p_rad,
+		b.p_sw,
+		b.p_diss,
+		b.closure_residual,
+	])
+}
+
+/// Multiply AF intensity `total` by slab-dipole \(|F^\mathrm{iso}|^2\).
+/// Same grid as `apply_green_pec_pattern`. Invalid params leave `total` unchanged.
+#[wasm_bindgen]
+pub fn apply_green_slab_pattern(
+	domain: u32,
+	ax1: &[f32],
+	ax2: &[f32],
+	total: &mut [f32],
+	h: f64,
+	ell: f64,
+	freq_scale: f64,
+	eps_r: f64,
+	h_sub: f64,
+	tan_delta: f64,
+) -> f32 {
+	let n1 = ax1.len();
+	let n2 = ax2.len();
+	let env = if h.is_finite() && ell.is_finite() && freq_scale.is_finite() && freq_scale > 0.0 {
+		slab_env_or_none(eps_r, h_sub, tan_delta)
+	} else {
+		None
+	};
+	let mut max_value = f32::NEG_INFINITY;
+	let Some(env) = env else {
+		for &t in total.iter() {
+			if t > max_value {
+				max_value = t;
+			}
+		}
+		return max_value;
+	};
+	for i2 in 0..n2 {
+		let a2 = ax2[i2];
+		let off = i2 * n1;
+		for i1 in 0..n1 {
+			let idx = off + i1;
+			if idx >= total.len() {
+				break;
+			}
+			let factor = match direction_theta_phi(domain, ax1[i1], a2) {
+				Some((theta, phi)) => {
+					let p = f_iso_slab_dipole_power(theta, phi, h, ell, freq_scale, env);
 					if p.is_finite() {
 						p as f32
 					} else {
@@ -302,6 +425,76 @@ mod tests {
 		let mut total = vec![2.5f32];
 		let orig = total.clone();
 		let peak = apply_green_pec_pattern(DOMAIN_SPHERICAL, &ax1, &ax2, &mut total, 0.25, 0.1, f64::NAN);
+		assert_eq!(total, orig);
+		assert!((peak - 2.5).abs() < 1e-6);
+	}
+
+	#[test]
+	fn green_slab_boresight_finite() {
+		use crate::green::{DEFAULT_ELL, DEFAULT_H};
+		use crate::green_slab::SlabEnv;
+		let env = SlabEnv::DEFAULT;
+		let theta = [0.0f32];
+		let phi = [0.0f32];
+		let mut total = vec![1.0f32];
+		let peak = apply_green_slab_pattern(
+			DOMAIN_SPHERICAL,
+			&theta,
+			&phi,
+			&mut total,
+			DEFAULT_H,
+			DEFAULT_ELL,
+			1.0,
+			env.eps_r,
+			env.h_sub,
+			env.tan_delta,
+		);
+		assert!(total[0] > 0.0 && total[0].is_finite());
+		assert!((peak - total[0]).abs() < 1e-6);
+	}
+
+	#[test]
+	fn green_slab_zeros_uv_outside_unit_circle() {
+		use crate::green::{DEFAULT_ELL, DEFAULT_H};
+		use crate::green_slab::SlabEnv;
+		let env = SlabEnv::DEFAULT;
+		let u = [0.0f32, 1.2];
+		let v = [0.0f32];
+		let mut total = vec![1.0f32, 1.0];
+		apply_green_slab_pattern(
+			DOMAIN_UV,
+			&u,
+			&v,
+			&mut total,
+			DEFAULT_H,
+			DEFAULT_ELL,
+			1.0,
+			env.eps_r,
+			env.h_sub,
+			env.tan_delta,
+		);
+		assert!(total[0] > 0.0 && total[0].is_finite());
+		assert_eq!(total[1], 0.0);
+	}
+
+	#[test]
+	fn green_slab_invalid_params_leave_intensity() {
+		let ax1 = [0.0f32];
+		let ax2 = [0.0f32];
+		let mut total = vec![2.5f32];
+		let orig = total.clone();
+		let peak = apply_green_slab_pattern(
+			DOMAIN_SPHERICAL,
+			&ax1,
+			&ax2,
+			&mut total,
+			0.25,
+			0.1,
+			f64::NAN,
+			10.0,
+			0.05,
+			0.0,
+		);
 		assert_eq!(total, orig);
 		assert!((peak - 2.5).abs() < 1e-6);
 	}
