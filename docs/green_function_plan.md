@@ -265,6 +265,31 @@ File: wasm/src/green.rs  (mod green in lib.rs only)
 Do not change GUI. Read match_s.rs from_z_common.
 ```
 
+### WP1 results (implemented)
+
+- Files: `wasm/src/green.rs` (kernel + tests); `wasm/src/lib.rs` is `mod green;` only (no bindgen, no `pub use`).
+- Signatures (f64, ohms / stripped \(E_{\theta,\phi}\)):
+
+```text
+ETA0 = 120 * PI
+DEFAULT_H = 0.25, DEFAULT_ELL = 0.1, DEFAULT_A = 0.001
+z_pair_pec_dipole(dx, dy, h, ell, a, freq_scale) -> (re, im)
+f_iso_pec_dipole(theta, phi, h, ell, freq_scale) -> (e_th_re, e_th_im, e_ph_re, e_ph_im)
+f_iso_pec_dipole_power(...) -> |F|²
+```
+
+- Physics for WP2: coincident pair uses \(Z_\mathrm{fs}(\ell,a)-Z(0,0,2h)\), not \(1/R^3\); mutual is Hertzian \(E_x\) plus reversed image. \(F^\mathrm{iso}\) is real with a \(\sin(kh\cos\theta)\) image factor; back hemisphere \(\theta>\pi/2\) is zero. Do not call the Gram. Do not power-normalize to \(4\pi\).
+- Tests: `cargo test --manifest-path wasm/Cargo.toml` (8 `green::tests::*`, 91 total wasm tests).
+- Next: WP2. `from_z` is the only match entry for Green mode. Do not change GUI.
+
+```text
+WP1 done. Next: WP2.
+API: z_pair_pec_dipole(dx, dy, h, ell, a, freq_scale) -> (re, im)
+     f_iso_pec_dipole(theta, phi, h, ell, freq_scale) -> (Eθ, Eφ)
+File: wasm/src/green.rs  (mod green in lib.rs only)
+Do not change GUI. Read match_s.rs from_z_common.
+```
+
 ---
 
 ## 8. WP2 — `from_z` and dense \(Z\) wiring
