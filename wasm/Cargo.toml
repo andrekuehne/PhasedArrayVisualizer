@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 wasm-bindgen = "0.2"
 wide = "0.7"
+faer = { version = "0.24", default-features = false, features = ["std"] }
 
 [profile.release]
 lto = true

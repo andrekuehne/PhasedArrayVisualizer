@@ -22,6 +22,8 @@ cargo install wasm-pack
 ./wasm/build.ps1
 ```
 
+Matched \(S,T\) uses [faer](https://crates.io/crates/faer) (sequential) from every GUI matching mode. Textbook solvers stay in-tree for `cargo test` parity only.
+
 Equivalence tests compare the original JavaScript loops to both WASM builds, including worker-style row splits:
 
 ```powershell

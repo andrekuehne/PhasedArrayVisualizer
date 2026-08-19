@@ -1,5 +1,6 @@
-import {ones, normalize, zeros} from "../util.js";
+import {ones, zeros} from "../util.js";
 import { IlluminationTypicalPlaneWave } from "./illumination.js"
+import {alignPhaseCycles, conjugatePhaseCycles, gemv, reflectionRatio} from "./matched.js";
 /** @import { GeometryHint } from "./geometry.js" */
 /** @import { IlluminationHint } from "./illumination.js" */
 
@@ -47,6 +48,16 @@ export class PhasedArray{
 		this.illum = null;
 		this.elementPattern = null;
 		this.powerWeightSum = 0;
+		this.coupling = 'isolated';
+		this.tRe = null;
+		this.tIm = null;
+		this.sRe = null;
+		this.sIm = null;
+		this.zRe = null;
+		this.zIm = null;
+		this.z0 = null;
+		this.z0Im = null;
+		this.reflectionGamma = 0;
 	}
 	set_theta_phi(theta, phi){
 		this.theta = Number(theta);
@@ -111,6 +122,56 @@ export class PhasedArray{
 			this.vSteerPhaseFactor[i] = s;
 			this.vIdealPhaseFactor[i] = s - this.vIllumPhaseFactor[i];
 		}
+	}
+	/**
+	 * Conjugate of embedded-pattern phase at the commanded (θ,φ).
+	 * Uses cached T when matched; identity T when isolated.
+	 * A global cycle offset (and unwrap) anchors the result to the geometric steer law.
+	 * @param {number} frequencyScale
+	 */
+	compute_conjugate_phase(frequencyScale){
+		const ep = this.elementPattern;
+		const kind = ep ? ep.kind : 0;
+		const nExp = ep ? ep.n : 0;
+		const matched = this.coupling === 'matched' && this.tRe && this.tRe.length === this.size * this.size;
+		const cycles = conjugatePhaseCycles(
+			this.geometry.x,
+			this.geometry.y,
+			this.theta,
+			this.phi,
+			frequencyScale,
+			matched ? this.tRe : null,
+			matched ? this.tIm : null,
+			kind,
+			nExp
+		);
+		this.compute_phase();
+		const aligned = alignPhaseCycles(cycles, this.vSteerPhaseFactor);
+		for (let i = 0; i < this.size; i++){
+			this.vSteerPhaseFactor[i] = aligned[i];
+			this.vIdealPhaseFactor[i] = aligned[i] - this.vIllumPhaseFactor[i];
+		}
+	}
+	set_matched_basis(z0, sRe, sIm, tRe, tIm, z0Im, zRe, zIm){
+		this.z0 = z0;
+		this.z0Im = z0Im || null;
+		this.sRe = sRe;
+		this.sIm = sIm;
+		this.tRe = tRe;
+		this.tIm = tIm;
+		this.zRe = zRe || null;
+		this.zIm = zIm || null;
+	}
+	clear_matched_basis(){
+		this.z0 = null;
+		this.z0Im = null;
+		this.sRe = null;
+		this.sIm = null;
+		this.tRe = null;
+		this.tIm = null;
+		this.zRe = null;
+		this.zIm = null;
+		this.reflectionGamma = 0;
 	}
 	set_manual_phase(index, override, phaseRad){
 		let ov = this.vectorPhaseIsManual[index];
@@ -233,13 +294,62 @@ export class PhasedArray{
 	availablePowerWatts(pAnt){
 		return Number(pAnt) * this.geometry.length;
 	}
+	/**
+	* Accepted power in watts: stimulated × (1 − Γ) when Matched, else stimulated.
+	*
+	* @param {Number} pAnt Full-scale per-antenna power (W)
+	*
+	* @return {Number}
+	*/
+	acceptedPowerWatts(pAnt){
+		const pStim = this.totalPowerWatts(pAnt);
+		if (this.coupling !== 'matched') return pStim;
+		const gamma = Number(this.reflectionGamma) || 0;
+		return pStim * (1 - gamma);
+	}
+	/**
+	* IEEE realized gain: directivity × accepted/stimulated (Isolated: dirMax).
+	*
+	* @param {Number} dirMax Peak directivity (linear)
+	*
+	* @return {Number}
+	*/
+	realizedGain(dirMax){
+		const d = Number(dirMax);
+		if (!Number.isFinite(d)) return NaN;
+		if (this.coupling !== 'matched') return d;
+		const gamma = Number(this.reflectionGamma) || 0;
+		return d * (1 - gamma);
+	}
 	create_farfield_vectors(freq_scale){
-		const pha = new Float32Array(this.size);
-		const mag = new Float32Array(this.size);
-		const f = 2 * Math.PI;
-		for (let i = 0; i < this.size; i++){
-			pha[i] = -f * ((this.vQuantizePhaseFactor[i] + this.vIllumPhaseFactor[i] * freq_scale) % 1.0);
+		const n = this.size;
+		const twoPi = 2 * Math.PI;
+		const aRe = new Float64Array(n);
+		const aIm = new Float64Array(n);
+		for (let i = 0; i < n; i++){
+			const mag = this.vQuantizeMag[i];
+			const ph = -twoPi * this.vQuantizePhaseFactor[i];
+			aRe[i] = mag * Math.cos(ph);
+			aIm[i] = mag * Math.sin(ph);
 		}
-		return [pha, this.vFarfieldMag];
+		let wRe = aRe;
+		let wIm = aIm;
+		this.reflectionGamma = 0;
+		const nn = n * n;
+		if (this.coupling === 'matched' && this.tRe && this.tRe.length === nn){
+			this.reflectionGamma = reflectionRatio(this.sRe, this.sIm, aRe, aIm);
+			const w = gemv(this.tRe, this.tIm, aRe, aIm);
+			wRe = w.re;
+			wIm = w.im;
+		}
+		const pha = new Float32Array(n);
+		const mag = new Float32Array(n);
+		const f = Number(freq_scale);
+		for (let i = 0; i < n; i++){
+			const illumPha = -twoPi * (this.vIllumPhaseFactor[i] * f);
+			mag[i] = Math.hypot(wRe[i], wIm[i]) * this.vIllumMag[i];
+			pha[i] = Math.atan2(wIm[i], wRe[i]) + illumPha;
+		}
+		return [pha, mag];
 	}
 }

@@ -4,7 +4,8 @@ import {ScenePlotFarfield2DPlotly} from "./scene/plot-2d/scene-plot-2d-farfield-
 import {ScenePlot2DGeometryGeneric} from "./scene/plot-2d/scene-plot-2d-geometry.js";
 import {SceneParent} from "./scene/scene-abc.js"
 import {SceneTheme} from "./scene/scene-util.js";
-import {initFarfieldWasm} from "./wasm/init.js";
+import {initFarfieldWasm, slabDipolePowerBudget} from "./wasm/init.js";
+import {PATTERN_GREEN_SLAB} from "./phasedarray/element.js";
 
 document.addEventListener('DOMContentLoaded', async () => {
 	new SceneTheme();
@@ -110,27 +111,88 @@ export class PhasedArrayScene extends SceneParent{
 			const pAnt = pwr.getWatts();
 			const pAvail = pa.availablePowerWatts(pAnt);
 			const pStim = pa.totalPowerWatts(pAnt);
+			const matched = pa.coupling === 'matched';
+			const pAcc = pa.acceptedPowerWatts(pAnt);
+			const pRef = matched ? pStim - pAcc : 0;
 			this.find_element('available-power').innerHTML = pwr.formatEirp(pAvail, 1);
 			this.find_element('stimulated-power').innerHTML = pwr.formatEirp(pStim, 1);
-			const util = pAvail > 0 ? pStim / pAvail : 0;
+			this.find_element('reflected-power').innerHTML = matched ? pwr.formatEirp(pRef, 1) : '—';
+			this.find_element('accepted-power').innerHTML = matched ? pwr.formatEirp(pAcc, 1) : '—';
+			const pUsed = matched ? pAcc : pStim;
+			const util = pAvail > 0 ? pUsed / pAvail : 0;
 			const utilDb = util > 0 ? (10 * Math.log10(util)).toFixed(1) : '-Inf';
 			this.find_element('power-utilization').innerHTML = `${(util * 100).toFixed(1)} % (${utilDb} dB)`;
+			const slabRows = ['slab-p-rad-row', 'slab-p-sw-row', 'slab-p-diss-row', 'slab-closure-row'];
+			const ep = pa.elementPattern;
+			const isSlab = ep != null && ep.kind === PATTERN_GREEN_SLAB;
+			for (const id of slabRows){
+				this.find_element(id).style.display = isSlab ? '' : 'none';
+			}
+			if (isSlab){
+				let budget;
+				try {
+					budget = slabDipolePowerBudget(
+						ep.h, ep.ell, ep.a,
+						this.arrayControl.frequencyScale(),
+						ep.epsR, ep.hSub, ep.tanDelta
+					);
+				}
+				catch {
+					budget = null;
+				}
+				const fmtW = (v) => {
+					if (!Number.isFinite(v)) return '—';
+					const av = Math.abs(v);
+					if (av === 0) return '0 W';
+					if (av >= 1e4 || av < 1e-4) return `${v.toExponential(3)} W`;
+					return `${Number(v.toPrecision(4))} W`;
+				};
+				if (budget == null){
+					this.find_element('slab-p-rad').innerHTML = '—';
+					this.find_element('slab-p-sw').innerHTML = '—';
+					this.find_element('slab-p-diss').innerHTML = '—';
+					this.find_element('slab-closure').innerHTML = '—';
+				}
+				else{
+					const reZ = budget[0];
+					const residual = budget[4];
+					this.find_element('slab-p-rad').innerHTML = fmtW(budget[1]);
+					this.find_element('slab-p-sw').innerHTML = fmtW(budget[2]);
+					this.find_element('slab-p-diss').innerHTML = fmtW(budget[3]);
+					const closEle = this.find_element('slab-closure');
+					closEle.innerHTML = fmtW(residual);
+					if (Number.isFinite(reZ) && reZ > 0 && Number.isFinite(residual) && Math.abs(residual) / reZ > 1e-3){
+						closEle.title = 'Closure residual is larger than 0.1% of Re(Z_self).';
+					}
+					else{
+						closEle.removeAttribute('title');
+					}
+				}
+			}
 			const ff = this.farfieldControl.ff;
 			if (ff == null || ff.dirMax == null) return;
-			const eirp = ff.dirMax * pStim;
+			const eirp = ff.dirMax * pAcc;
+			const gReal = pa.realizedGain(ff.dirMax);
+			this.find_element('realized-gain').innerHTML = Number.isFinite(gReal) && gReal > 0
+				? `${(10 * Math.log10(gReal)).toFixed(1)} dB`
+				: '—';
+			const idir = ff.idealDirectivity;
+			if (Number.isFinite(gReal) && gReal > 0 && Number.isFinite(idir) && idir > 0){
+				const eta = gReal / idir;
+				this.find_element('aperture-efficiency').innerHTML =
+					`${(eta * 100).toFixed(1)} % (${(10 * Math.log10(eta)).toFixed(1)} dB)`;
+			}
+			else{
+				this.find_element('aperture-efficiency').innerHTML = '—';
+			}
 			this.find_element('peak-eirp').innerHTML = pwr.formatEirp(eirp, 1);
 			this.plotFF.set_title_metrics(
 				`Directivity: ${(10*Math.log10(ff.dirMax)).toFixed(1)} dB, EIRP: ${pwr.formatEirp(eirp, 1)}`
 			);
 		};
 		this.farfieldControl.add_max_monitor('directivity', (v) => {
-			let idir = this.farfieldControl.ff.idealDirectivity;
 			this.find_element('calc-directivity').innerHTML = `${(10*Math.log10(v)).toFixed(1)} dB`
-			this.find_element('aperture-efficiency').innerHTML = `${((v / idir) * 100).toFixed(1)} % (${(10 * Math.log10(v / idir)).toFixed(1)} dB)`
 			update_power_displays();
-		});
-		this.farfieldControl.add_max_monitor('ideal-directivity', (v) => {
-			this.find_element('ideal-directivity').innerHTML = `${(10 * Math.log10(v)).toFixed(1)} dB`
 		});
 		this.farfieldControl.add_max_monitor('pattern-metrics', (m) => {
 			this.update_pattern_metrics_display(m);

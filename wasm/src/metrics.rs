@@ -138,6 +138,20 @@ pub(crate) fn boresight_cosine(domain: u32, a1: f32, a2: f32) -> f32 {
 	}
 }
 
+/// Standard spherical \((\theta,\phi)\) of a plot sample, or `None` if
+/// invisible (UV exterior) / unknown domain. \(\theta=0\) is \(+\hat z\).
+pub(crate) fn direction_theta_phi(domain: u32, a1: f32, a2: f32) -> Option<(f64, f64)> {
+	let v = look(domain, a1, a2)?;
+	let n = v.norm();
+	if n < 1e-20 {
+		return None;
+	}
+	let z = (v.z / n) as f64;
+	let theta = z.clamp(-1.0, 1.0).acos();
+	let phi = (v.y as f64).atan2(v.x as f64);
+	Some((theta, phi))
+}
+
 fn look(domain: u32, a1: f32, a2: f32) -> Option<Vec3> {
 	match domain {
 		DOMAIN_SPHERICAL => {

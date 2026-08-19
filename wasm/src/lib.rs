@@ -1,9 +1,21 @@
+mod bessel;
 mod element;
+mod green;
+mod green_slab;
+mod green_spectral;
 mod kernel;
+mod match_s;
 mod metrics;
+mod prad;
+mod quadrature;
 mod sincos;
 
+mod linalg;
+#[allow(dead_code)]
+mod legacy_linalg;
+
 use kernel::FarfieldState;
+use prad::PradState;
 use wasm_bindgen::prelude::*;
 
 pub use kernel::{DOMAIN_LUDWIG3, DOMAIN_SPHERICAL, DOMAIN_UV};
@@ -49,5 +61,291 @@ impl FarfieldKernel {
 
 	pub fn take_total(&self) -> Vec<f32> {
 		self.state.total.clone()
+	}
+}
+
+#[wasm_bindgen]
+pub struct RadiatedPowerKernel {
+	state: PradState,
+}
+
+#[wasm_bindgen]
+impl RadiatedPowerKernel {
+	#[wasm_bindgen(constructor)]
+	pub fn new() -> RadiatedPowerKernel {
+		RadiatedPowerKernel {
+			state: PradState::new(),
+		}
+	}
+
+	pub fn set_quadrature(&mut self, n_mu: u32, n_phi: u32) {
+		self.state.set_quadrature(n_mu, n_phi);
+	}
+
+	pub fn fill_isolated(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		element_kind: u32,
+		element_n: f32,
+	) {
+		self.state
+			.fill_isolated(x, y, frequency_scale, element_kind, element_n);
+	}
+
+	pub fn fill_isolated_range(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		element_kind: u32,
+		element_n: f32,
+		sample0: u32,
+		sample_count: u32,
+	) {
+		self.state.fill_isolated_range(
+			x,
+			y,
+			frequency_scale,
+			element_kind,
+			element_n,
+			sample0,
+			sample_count,
+		);
+	}
+
+	pub fn form_gram(&mut self) {
+		self.state.form_gram();
+	}
+
+	pub fn compute(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		element_kind: u32,
+		element_n: f32,
+	) {
+		self.state
+			.compute(x, y, frequency_scale, element_kind, element_n);
+	}
+
+	pub fn compute_j0(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		element_kind: u32,
+		element_n: f32,
+	) {
+		self.state
+			.compute_j0(x, y, frequency_scale, element_kind, element_n);
+	}
+
+	pub fn take_re(&self) -> Vec<f32> {
+		self.state.p_re.clone()
+	}
+
+	pub fn take_im(&self) -> Vec<f32> {
+		self.state.p_im.clone()
+	}
+
+	pub fn form_matched_s(
+		&mut self,
+		z_ref: f32,
+		x: &[f32],
+		y: &[f32],
+		x_nn: f32,
+		alpha: f32,
+		beta: f32,
+		aniso: f32,
+		z_common_re: f32,
+		x_self: f32,
+	) {
+		self.state.form_matched_s(
+			z_ref,
+			x,
+			y,
+			x_nn,
+			alpha,
+			beta,
+			aniso,
+			z_common_re,
+			x_self,
+		);
+	}
+
+	pub fn form_matched_s_propagation(
+		&mut self,
+		z_ref: f32,
+		x: &[f32],
+		y: &[f32],
+		x_nn: f32,
+		att: f32,
+		eps_x: f32,
+		eps_y: f32,
+		freq: f32,
+		z_common_re: f32,
+		x_self: f32,
+	) {
+		self.state.form_matched_s_propagation(
+			z_ref,
+			x,
+			y,
+			x_nn,
+			att,
+			eps_x,
+			eps_y,
+			freq,
+			z_common_re,
+			x_self,
+		);
+	}
+
+	pub fn form_green_pec_dipole(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		h: f32,
+		ell: f32,
+		a: f32,
+		z_ref: f32,
+		z_common_re: f32,
+		x_self: f64,
+	) {
+		self.state.form_green_pec_dipole(
+			x,
+			y,
+			frequency_scale,
+			h,
+			ell,
+			a,
+			z_ref,
+			z_common_re,
+			x_self,
+		);
+	}
+
+	pub fn fill_green_pec_dipole_z(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		h: f32,
+		ell: f32,
+		a: f32,
+	) {
+		self.state
+			.fill_green_pec_dipole_z(x, y, frequency_scale, h, ell, a);
+	}
+
+	pub fn form_green_slab_dipole(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		h: f32,
+		ell: f32,
+		a: f32,
+		eps_r: f32,
+		h_sub: f32,
+		tan_delta: f32,
+		z_ref: f32,
+		z_common_re: f32,
+		x_self: f64,
+	) {
+		self.state.form_green_slab_dipole(
+			x,
+			y,
+			frequency_scale,
+			h,
+			ell,
+			a,
+			eps_r,
+			h_sub,
+			tan_delta,
+			z_ref,
+			z_common_re,
+			x_self,
+		);
+	}
+
+	pub fn fill_green_slab_dipole_z(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		h: f32,
+		ell: f32,
+		a: f32,
+		eps_r: f32,
+		h_sub: f32,
+		tan_delta: f32,
+	) {
+		self.state.fill_green_slab_dipole_z(
+			x,
+			y,
+			frequency_scale,
+			h,
+			ell,
+			a,
+			eps_r,
+			h_sub,
+			tan_delta,
+		);
+	}
+
+	pub fn form_from_z(&mut self, z_ref: f32, z_common_re: f32, x_self: f64) {
+		self.state.form_from_z(z_ref, z_common_re, x_self);
+	}
+
+	pub fn take_z0(&self) -> Vec<f64> {
+		self.state.z0.clone()
+	}
+
+	pub fn take_z0_im(&self) -> Vec<f64> {
+		self.state.z0_im.clone()
+	}
+
+	pub fn take_z_re(&self) -> Vec<f64> {
+		self.state.r_re.clone()
+	}
+
+	pub fn take_z_im(&self) -> Vec<f64> {
+		self.state.r_im.clone()
+	}
+
+	pub fn take_s_re(&self) -> Vec<f64> {
+		self.state.s_re.clone()
+	}
+
+	pub fn take_s_im(&self) -> Vec<f64> {
+		self.state.s_im.clone()
+	}
+
+	pub fn take_t_re(&self) -> Vec<f64> {
+		self.state.t_re.clone()
+	}
+
+	pub fn take_t_im(&self) -> Vec<f64> {
+		self.state.t_im.clone()
+	}
+
+	pub fn match_iterations(&self) -> u32 {
+		self.state.match_iterations
+	}
+
+	pub fn match_residual(&self) -> f64 {
+		self.state.match_residual
+	}
+
+	pub fn n_samples(&self) -> u32 {
+		self.state.n_samples() as u32
+	}
+
+	pub fn n_elements(&self) -> u32 {
+		self.state.n_elements() as u32
 	}
 }

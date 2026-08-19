@@ -502,6 +502,329 @@ export class PatternMetrics {
 }
 if (Symbol.dispose) PatternMetrics.prototype[Symbol.dispose] = PatternMetrics.prototype.free;
 
+export class RadiatedPowerKernel {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        RadiatedPowerKernelFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_radiatedpowerkernel_free(ptr, 0);
+    }
+    /**
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} frequency_scale
+     * @param {number} element_kind
+     * @param {number} element_n
+     */
+    compute(x, y, frequency_scale, element_kind, element_n) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_compute(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, element_kind, element_n);
+    }
+    /**
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} frequency_scale
+     * @param {number} element_kind
+     * @param {number} element_n
+     */
+    compute_j0(x, y, frequency_scale, element_kind, element_n) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_compute_j0(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, element_kind, element_n);
+    }
+    /**
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} frequency_scale
+     * @param {number} h
+     * @param {number} ell
+     * @param {number} a
+     */
+    fill_green_pec_dipole_z(x, y, frequency_scale, h, ell, a) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_fill_green_pec_dipole_z(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, h, ell, a);
+    }
+    /**
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} frequency_scale
+     * @param {number} h
+     * @param {number} ell
+     * @param {number} a
+     * @param {number} eps_r
+     * @param {number} h_sub
+     * @param {number} tan_delta
+     */
+    fill_green_slab_dipole_z(x, y, frequency_scale, h, ell, a, eps_r, h_sub, tan_delta) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_fill_green_slab_dipole_z(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, h, ell, a, eps_r, h_sub, tan_delta);
+    }
+    /**
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} frequency_scale
+     * @param {number} element_kind
+     * @param {number} element_n
+     */
+    fill_isolated(x, y, frequency_scale, element_kind, element_n) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_fill_isolated(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, element_kind, element_n);
+    }
+    /**
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} frequency_scale
+     * @param {number} element_kind
+     * @param {number} element_n
+     * @param {number} sample0
+     * @param {number} sample_count
+     */
+    fill_isolated_range(x, y, frequency_scale, element_kind, element_n, sample0, sample_count) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_fill_isolated_range(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, element_kind, element_n, sample0, sample_count);
+    }
+    /**
+     * @param {number} z_ref
+     * @param {number} z_common_re
+     * @param {number} x_self
+     */
+    form_from_z(z_ref, z_common_re, x_self) {
+        wasm.radiatedpowerkernel_form_from_z(this.__wbg_ptr, z_ref, z_common_re, x_self);
+    }
+    form_gram() {
+        wasm.radiatedpowerkernel_form_gram(this.__wbg_ptr);
+    }
+    /**
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} frequency_scale
+     * @param {number} h
+     * @param {number} ell
+     * @param {number} a
+     * @param {number} z_ref
+     * @param {number} z_common_re
+     * @param {number} x_self
+     */
+    form_green_pec_dipole(x, y, frequency_scale, h, ell, a, z_ref, z_common_re, x_self) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_form_green_pec_dipole(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, h, ell, a, z_ref, z_common_re, x_self);
+    }
+    /**
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} frequency_scale
+     * @param {number} h
+     * @param {number} ell
+     * @param {number} a
+     * @param {number} eps_r
+     * @param {number} h_sub
+     * @param {number} tan_delta
+     * @param {number} z_ref
+     * @param {number} z_common_re
+     * @param {number} x_self
+     */
+    form_green_slab_dipole(x, y, frequency_scale, h, ell, a, eps_r, h_sub, tan_delta, z_ref, z_common_re, x_self) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_form_green_slab_dipole(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, h, ell, a, eps_r, h_sub, tan_delta, z_ref, z_common_re, x_self);
+    }
+    /**
+     * @param {number} z_ref
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} x_nn
+     * @param {number} alpha
+     * @param {number} beta
+     * @param {number} aniso
+     * @param {number} z_common_re
+     * @param {number} x_self
+     */
+    form_matched_s(z_ref, x, y, x_nn, alpha, beta, aniso, z_common_re, x_self) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_form_matched_s(this.__wbg_ptr, z_ref, ptr0, len0, ptr1, len1, x_nn, alpha, beta, aniso, z_common_re, x_self);
+    }
+    /**
+     * @param {number} z_ref
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} x_nn
+     * @param {number} att
+     * @param {number} eps_x
+     * @param {number} eps_y
+     * @param {number} freq
+     * @param {number} z_common_re
+     * @param {number} x_self
+     */
+    form_matched_s_propagation(z_ref, x, y, x_nn, att, eps_x, eps_y, freq, z_common_re, x_self) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_form_matched_s_propagation(this.__wbg_ptr, z_ref, ptr0, len0, ptr1, len1, x_nn, att, eps_x, eps_y, freq, z_common_re, x_self);
+    }
+    /**
+     * @returns {number}
+     */
+    match_iterations() {
+        const ret = wasm.radiatedpowerkernel_match_iterations(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    match_residual() {
+        const ret = wasm.radiatedpowerkernel_match_residual(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    n_elements() {
+        const ret = wasm.radiatedpowerkernel_n_elements(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    n_samples() {
+        const ret = wasm.radiatedpowerkernel_n_samples(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    constructor() {
+        const ret = wasm.radiatedpowerkernel_new();
+        this.__wbg_ptr = ret;
+        RadiatedPowerKernelFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} n_mu
+     * @param {number} n_phi
+     */
+    set_quadrature(n_mu, n_phi) {
+        wasm.radiatedpowerkernel_set_quadrature(this.__wbg_ptr, n_mu, n_phi);
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    take_im() {
+        const ret = wasm.radiatedpowerkernel_take_im(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    take_re() {
+        const ret = wasm.radiatedpowerkernel_take_re(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    take_s_im() {
+        const ret = wasm.radiatedpowerkernel_take_s_im(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    take_s_re() {
+        const ret = wasm.radiatedpowerkernel_take_s_re(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    take_t_im() {
+        const ret = wasm.radiatedpowerkernel_take_t_im(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    take_t_re() {
+        const ret = wasm.radiatedpowerkernel_take_t_re(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    take_z0() {
+        const ret = wasm.radiatedpowerkernel_take_z0(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    take_z0_im() {
+        const ret = wasm.radiatedpowerkernel_take_z0_im(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    take_z_im() {
+        const ret = wasm.radiatedpowerkernel_take_z_im(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    take_z_re() {
+        const ret = wasm.radiatedpowerkernel_take_z_re(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+}
+if (Symbol.dispose) RadiatedPowerKernel.prototype[Symbol.dispose] = RadiatedPowerKernel.prototype.free;
+
 /**
  * Multiply AF intensity `total` (row-major `i2 * n1 + i1`) by the element
  * power pattern. Returns the new peak. Cos^n uses `[max(w,0)]^n` and is 0
@@ -522,6 +845,56 @@ export function apply_element_pattern(domain, ax1, ax2, total, kind, n) {
     var ptr2 = passArrayF32ToWasm0(total, wasm.__wbindgen_malloc);
     var len2 = WASM_VECTOR_LEN;
     const ret = wasm.apply_element_pattern(domain, ptr0, len0, ptr1, len1, ptr2, len2, total, kind, n);
+    return ret;
+}
+
+/**
+ * Multiply AF intensity `total` by PEC-dipole \(|F^\mathrm{iso}|^2\).
+ * Same grid as `apply_element_pattern`. Does not replace isotropic / cos^n.
+ * Invalid params leave `total` unchanged and still return a finite peak.
+ * @param {number} domain
+ * @param {Float32Array} ax1
+ * @param {Float32Array} ax2
+ * @param {Float32Array} total
+ * @param {number} h
+ * @param {number} ell
+ * @param {number} freq_scale
+ * @returns {number}
+ */
+export function apply_green_pec_pattern(domain, ax1, ax2, total, h, ell, freq_scale) {
+    const ptr0 = passArrayF32ToWasm0(ax1, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArrayF32ToWasm0(ax2, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    var ptr2 = passArrayF32ToWasm0(total, wasm.__wbindgen_malloc);
+    var len2 = WASM_VECTOR_LEN;
+    const ret = wasm.apply_green_pec_pattern(domain, ptr0, len0, ptr1, len1, ptr2, len2, total, h, ell, freq_scale);
+    return ret;
+}
+
+/**
+ * Multiply AF intensity `total` by slab-dipole \(|F^\mathrm{iso}|^2\).
+ * Same grid as `apply_green_pec_pattern`. Invalid params leave `total` unchanged.
+ * @param {number} domain
+ * @param {Float32Array} ax1
+ * @param {Float32Array} ax2
+ * @param {Float32Array} total
+ * @param {number} h
+ * @param {number} ell
+ * @param {number} freq_scale
+ * @param {number} eps_r
+ * @param {number} h_sub
+ * @param {number} tan_delta
+ * @returns {number}
+ */
+export function apply_green_slab_pattern(domain, ax1, ax2, total, h, ell, freq_scale, eps_r, h_sub, tan_delta) {
+    const ptr0 = passArrayF32ToWasm0(ax1, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArrayF32ToWasm0(ax2, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    var ptr2 = passArrayF32ToWasm0(total, wasm.__wbindgen_malloc);
+    var len2 = WASM_VECTOR_LEN;
+    const ret = wasm.apply_green_slab_pattern(domain, ptr0, len0, ptr1, len1, ptr2, len2, total, h, ell, freq_scale, eps_r, h_sub, tan_delta);
     return ret;
 }
 
@@ -555,6 +928,58 @@ export function extract_pattern_metrics(domain, ax1, ax2, total, req_theta_rad, 
     const ret = wasm.extract_pattern_metrics(domain, ptr0, len0, ptr1, len1, ptr2, len2, req_theta_rad, req_phi_rad);
     return PatternMetrics.__wrap(ret);
 }
+
+/**
+ * Isolated-element slab power budget at \(|I|=1\,\mathrm{A}\):
+ * `[re_z_self, p_rad, p_sw, p_diss, closure_residual]`.
+ * @param {number} h
+ * @param {number} ell
+ * @param {number} a
+ * @param {number} freq_scale
+ * @param {number} eps_r
+ * @param {number} h_sub
+ * @param {number} tan_delta
+ * @returns {Float64Array}
+ */
+export function slab_dipole_power_budget_wasm(h, ell, a, freq_scale, eps_r, h_sub, tan_delta) {
+    const ret = wasm.slab_dipole_power_budget_wasm(h, ell, a, freq_scale, eps_r, h_sub, tan_delta);
+    var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+    return v1;
+}
+
+/**
+ * Isolated PEC-dipole self impedance \(Z_{11}\) in ohms: `[re, im]`.
+ * @param {number} h
+ * @param {number} ell
+ * @param {number} a
+ * @param {number} freq_scale
+ * @returns {Float64Array}
+ */
+export function z_self_pec_dipole(h, ell, a, freq_scale) {
+    const ret = wasm.z_self_pec_dipole(h, ell, a, freq_scale);
+    var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+    return v1;
+}
+
+/**
+ * Isolated slab-dipole self impedance \(Z_{11}\) in ohms: `[re, im]`.
+ * @param {number} h
+ * @param {number} ell
+ * @param {number} a
+ * @param {number} freq_scale
+ * @param {number} eps_r
+ * @param {number} h_sub
+ * @param {number} tan_delta
+ * @returns {Float64Array}
+ */
+export function z_self_slab_dipole(h, ell, a, freq_scale, eps_r, h_sub, tan_delta) {
+    const ret = wasm.z_self_slab_dipole(h, ell, a, freq_scale, eps_r, h_sub, tan_delta);
+    var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+    return v1;
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -586,10 +1011,18 @@ const FarfieldKernelFinalization = (typeof FinalizationRegistry === 'undefined')
 const PatternMetricsFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_patternmetrics_free(ptr, 1));
+const RadiatedPowerKernelFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_radiatedpowerkernel_free(ptr, 1));
 
 function getArrayF32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
+function getArrayF64FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat64ArrayMemory0().subarray(ptr / 8, ptr / 8 + len);
 }
 
 function getArrayU8FromWasm0(ptr, len) {
@@ -603,6 +1036,14 @@ function getFloat32ArrayMemory0() {
         cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
     }
     return cachedFloat32ArrayMemory0;
+}
+
+let cachedFloat64ArrayMemory0 = null;
+function getFloat64ArrayMemory0() {
+    if (cachedFloat64ArrayMemory0 === null || cachedFloat64ArrayMemory0.byteLength === 0) {
+        cachedFloat64ArrayMemory0 = new Float64Array(wasm.memory.buffer);
+    }
+    return cachedFloat64ArrayMemory0;
 }
 
 function getStringFromWasm0(ptr, len) {
@@ -646,6 +1087,7 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedFloat32ArrayMemory0 = null;
+    cachedFloat64ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;

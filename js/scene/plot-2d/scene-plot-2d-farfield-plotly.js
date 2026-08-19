@@ -33,8 +33,11 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 		this.add_event_types('data-min-changed');
 		this.min = -40;
 		this.ff = null;
+		this._plotKind = 'farfield';
+		this._sZmax = 0;
 		this._ready = false;
 		this._title = '';
+		this._ffTitle = '';
 		this._meshKey = '';
 		this._hoverBound = false;
 		this._lastHoverPt = null;
@@ -82,6 +85,9 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 			this.load_farfield(ff);
 			this.update();
 		});
+		scene.addEventListener('matrix-plot-ready', () => {
+			this.update();
+		});
 	}
 	/**
 	 * @param {FarfieldHint} ff
@@ -90,23 +96,37 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 		this.ff = ff;
 	}
 	get isValid(){ return this.ff != null; }
+	_matrix_kind(){
+		const scene = this.parent.farfieldControl;
+		return scene && typeof scene.matrixKind === 'function' ? scene.matrixKind() : null;
+	}
 	/**
 	 * Update Plotly title with Directivity / EIRP (no z transfer).
 	 * @param {string} text
 	 */
 	set_title_metrics(text){
+		this._ffTitle = text;
+		if (this._plotKind === 'z' || this._plotKind === 's') return;
 		this._title = text;
 		if (this._ready) this._apply_title();
 	}
 	/**
-	 * Draw or restyle the heatmap from the current farfield.
+	 * Draw or restyle the heatmap from the current farfield or matrix.
 	 */
 	update(){
-		if (!this.isValid || !window.Plotly) return;
+		if (!window.Plotly) return;
+		const kind = this._matrix_kind();
+		if (kind === 'z' || kind === 's'){
+			this._update_matrix(kind);
+			return;
+		}
+		if (!this.isValid) return;
 		const ff = this.ff;
 		const key = this._mesh_key(ff);
-		if (!this._ready || key !== this._meshKey){
+		if (!this._ready || key !== this._meshKey || this._plotKind !== 'farfield'){
 			this._meshKey = key;
+			this._plotKind = 'farfield';
+			this._title = this._ffTitle;
 			this._react(ff);
 			return;
 		}
@@ -415,13 +435,296 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 			Plotly.react(this.el, data, layout, PLOT_CONFIG).then(done);
 		}
 	}
+	_update_matrix(kind){
+		const pa = this.parent.arrayControl && this.parent.arrayControl.pa;
+		if (pa == null || pa.size < 1) return;
+		if (kind === 'z' && (!pa.zRe || pa.zRe.length !== pa.size * pa.size)) return;
+		if (kind === 's' && (!pa.sRe || pa.sRe.length !== pa.size * pa.size)) return;
+		const key = `${kind}:${pa.size}`;
+		if (!this._ready || key !== this._meshKey || this._plotKind !== kind){
+			this._meshKey = key;
+			this._plotKind = kind;
+			this._react_matrix(kind, pa);
+			return;
+		}
+		this._restyle_matrix(kind, pa);
+	}
+	_port_axis(n){
+		const x = new Array(n);
+		for (let i = 0; i < n; i++) x[i] = i + 1;
+		return x;
+	}
+	_reshape(re, im, n, magDb){
+		const z = new Array(n);
+		const eps = 1e-30;
+		const hasIm = im != null && im.length >= n * n;
+		for (let i = 0; i < n; i++){
+			const row = new Array(n);
+			for (let j = 0; j < n; j++){
+				const k = i * n + j;
+				if (magDb){
+					row[j] = 20 * Math.log10(Math.max(Math.hypot(re[k], hasIm ? im[k] : 0), eps));
+				}
+				else{
+					row[j] = re[k];
+				}
+			}
+			z[i] = row;
+		}
+		return z;
+	}
+	_z_absmax(a, b){
+		let m = 0;
+		for (let i = 0; i < a.length; i++){
+			const v = Math.abs(a[i]);
+			if (v > m) m = v;
+			if (b){
+				const w = Math.abs(b[i]);
+				if (w > m) m = w;
+			}
+		}
+		return m > 0 ? m : 1;
+	}
+	_s_peak(z){
+		let m = -Infinity;
+		for (let i = 0; i < z.length; i++){
+			const row = z[i];
+			for (let j = 0; j < row.length; j++){
+				if (row[j] > m) m = row[j];
+			}
+		}
+		return Number.isFinite(m) ? m : 0;
+	}
+	_matrix_axis(n){
+		const tick0 = n <= 24;
+		return {
+			title: {text: ''},
+			zeroline: false,
+			showgrid: false,
+			automargin: true,
+			dtick: tick0 ? 1 : undefined,
+			tickfont: {size: n > 32 ? 9 : 11},
+		};
+	}
+	_react_matrix(kind, pa){
+		const Plotly = window.Plotly;
+		const n = pa.size;
+		const axis = this._port_axis(n);
+		const cmap = this._cmap_style();
+		const {bg, fg} = this._theme_colors();
+		const ax = this._matrix_axis(n);
+		let data;
+		let layout;
+		if (kind === 'z'){
+			const zRe = this._reshape(pa.zRe, null, n, false);
+			const zIm = this._reshape(
+				pa.zIm && pa.zIm.length === pa.zRe.length ? pa.zIm : new Float64Array(n * n),
+				null, n, false
+			);
+			const lim = this._z_absmax(pa.zRe, pa.zIm);
+			this._title = 'Z (Ω)';
+			data = [
+				{
+					type: 'heatmap',
+					x: axis,
+					y: axis,
+					z: zRe,
+					coloraxis: 'coloraxis',
+					showscale: false,
+					hoverinfo: 'none',
+					zsmooth: false,
+					xaxis: 'x',
+					yaxis: 'y',
+				},
+				{
+					type: 'heatmap',
+					x: axis,
+					y: axis,
+					z: zIm,
+					coloraxis: 'coloraxis',
+					showscale: false,
+					hoverinfo: 'none',
+					zsmooth: false,
+					xaxis: 'x2',
+					yaxis: 'y2',
+				},
+			];
+			layout = {
+				title: {
+					text: this._title,
+					font: {size: 13, color: fg},
+					x: 0.5,
+					xanchor: 'center',
+					y: 0.98,
+					yanchor: 'top',
+				},
+				margin: {t: 64, l: 40, r: 64, b: 40, pad: 0},
+				paper_bgcolor: bg,
+				plot_bgcolor: bg,
+				font: {color: fg},
+				dragmode: 'zoom',
+				hovermode: 'closest',
+				showlegend: false,
+				autosize: true,
+				uirevision: 'matrix-z',
+				grid: {rows: 1, columns: 2, pattern: 'independent', xgap: 0.08},
+				xaxis: {...ax, title: {text: 'j', font: {color: fg, size: 11}}},
+				yaxis: {
+					...ax,
+					autorange: 'reversed',
+					scaleanchor: 'x',
+					scaleratio: 1,
+					title: {text: 'i', font: {color: fg, size: 11}},
+				},
+				xaxis2: {...ax, title: {text: 'j', font: {color: fg, size: 11}}},
+				yaxis2: {
+					...ax,
+					autorange: 'reversed',
+					scaleanchor: 'x2',
+					scaleratio: 1,
+					title: {text: 'i', font: {color: fg, size: 11}},
+				},
+				annotations: [
+					{
+						text: 'Re(Z)',
+						showarrow: false,
+						xref: 'paper',
+						yref: 'paper',
+						x: 0.22,
+						y: 1.04,
+						font: {size: 12, color: fg},
+					},
+					{
+						text: 'Im(Z)',
+						showarrow: false,
+						xref: 'paper',
+						yref: 'paper',
+						x: 0.72,
+						y: 1.04,
+						font: {size: 12, color: fg},
+					},
+				],
+				coloraxis: {
+					colorscale: cmap.colorscale,
+					reversescale: cmap.reversescale,
+					cmin: -lim,
+					cmax: lim,
+					colorbar: {
+						title: {text: 'Ω', side: 'right', font: {color: fg, size: 11}},
+						tickfont: {color: fg, size: 10},
+						thickness: 12,
+						len: 0.8,
+					},
+				},
+			};
+		}
+		else{
+			const z = this._reshape(pa.sRe, pa.sIm, n, true);
+			this._sZmax = Math.max(0, this._s_peak(z));
+			this._title = 'S (dB)';
+			data = [{
+				type: 'heatmap',
+				x: axis,
+				y: axis,
+				z,
+				zmin: this.min,
+				zmax: this._sZmax,
+				zauto: false,
+				zsmooth: false,
+				showscale: true,
+				hoverinfo: 'none',
+				colorscale: cmap.colorscale,
+				reversescale: cmap.reversescale,
+				colorbar: {
+					title: {text: 'dB', side: 'right', font: {color: fg, size: 11}},
+					tickfont: {color: fg, size: 10},
+					thickness: 12,
+					len: 0.8,
+				},
+			}];
+			layout = {
+				title: {
+					text: this._title,
+					font: {size: 13, color: fg},
+					x: 0.5,
+					xanchor: 'center',
+					y: 0.98,
+					yanchor: 'top',
+				},
+				margin: {t: 48, l: 40, r: 64, b: 40, pad: 0},
+				paper_bgcolor: bg,
+				plot_bgcolor: bg,
+				font: {color: fg},
+				dragmode: 'zoom',
+				hovermode: 'closest',
+				showlegend: false,
+				autosize: true,
+				uirevision: 'matrix-s',
+				xaxis: {...ax, title: {text: 'j', font: {color: fg, size: 11}}, constrain: 'domain'},
+				yaxis: {
+					...ax,
+					autorange: 'reversed',
+					scaleanchor: 'x',
+					scaleratio: 1,
+					title: {text: 'i', font: {color: fg, size: 11}},
+					constrain: 'domain',
+				},
+			};
+		}
+		const done = () => {
+			this._ready = true;
+			this._bind_hover();
+			this._refresh_hover();
+		};
+		if (!this._ready){
+			Plotly.newPlot(this.el, data, layout, PLOT_CONFIG).then(done);
+		}
+		else{
+			Plotly.react(this.el, data, layout, PLOT_CONFIG).then(done);
+		}
+	}
+	_restyle_matrix(kind, pa){
+		const n = pa.size;
+		if (kind === 'z'){
+			const zRe = this._reshape(pa.zRe, null, n, false);
+			const zIm = this._reshape(
+				pa.zIm && pa.zIm.length === pa.zRe.length ? pa.zIm : new Float64Array(n * n),
+				null, n, false
+			);
+			const lim = this._z_absmax(pa.zRe, pa.zIm);
+			window.Plotly.restyle(this.el, {z: [zRe, zIm]}, [0, 1]).then(() => {
+				return window.Plotly.relayout(this.el, {
+					'coloraxis.cmin': -lim,
+					'coloraxis.cmax': lim,
+				});
+			}).then(() => { this._refresh_hover(); });
+			return;
+		}
+		const z = this._reshape(pa.sRe, pa.sIm, n, true);
+		this._sZmax = Math.max(0, this._s_peak(z));
+		window.Plotly.restyle(this.el, {z: [z], zmin: this.min, zmax: this._sZmax}, [0]).then(() => {
+			this._refresh_hover();
+		});
+	}
 	_restyle_scale(){
 		if (!this._ready || !window.Plotly) return;
+		if (this._plotKind === 'z') return;
+		if (this._plotKind === 's'){
+			window.Plotly.restyle(this.el, {zmin: this.min, zmax: this._sZmax}, [0]);
+			return;
+		}
 		window.Plotly.restyle(this.el, {zmin: this.min, zmax: 0}, [0]);
 	}
 	_restyle_colorscale(){
 		if (!this._ready || !window.Plotly) return;
 		const cmap = this._cmap_style();
+		if (this._plotKind === 'z'){
+			window.Plotly.relayout(this.el, {
+				'coloraxis.colorscale': cmap.colorscale,
+				'coloraxis.reversescale': cmap.reversescale,
+			});
+			return;
+		}
 		window.Plotly.restyle(this.el, {
 			colorscale: cmap.colorscale,
 			reversescale: cmap.reversescale,
@@ -434,12 +737,25 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 	_relayout_theme(){
 		if (!this._ready || !window.Plotly) return;
 		const {bg, fg} = this._theme_colors();
-		window.Plotly.relayout(this.el, {
+		const patch = {
 			paper_bgcolor: bg,
 			plot_bgcolor: bg,
 			'font.color': fg,
 			'title.font.color': fg,
-		});
+		};
+		if (this._plotKind === 'z'){
+			patch['coloraxis.colorbar.title.font.color'] = fg;
+			patch['coloraxis.colorbar.tickfont.color'] = fg;
+			patch['xaxis.title.font.color'] = fg;
+			patch['yaxis.title.font.color'] = fg;
+			patch['xaxis2.title.font.color'] = fg;
+			patch['yaxis2.title.font.color'] = fg;
+		}
+		else if (this._plotKind === 's'){
+			patch['xaxis.title.font.color'] = fg;
+			patch['yaxis.title.font.color'] = fg;
+		}
+		window.Plotly.relayout(this.el, patch);
 	}
 	_bind_hover(){
 		if (this._hoverBound) return;
@@ -497,6 +813,7 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 		});
 	}
 	_on_click(ev){
+		if (this._plotKind === 'z' || this._plotKind === 's') return;
 		if (!this._clickSteer.checked) return;
 		if (this.parent.queue != null && this.parent.queue.running) return;
 		const pt = ev.points && ev.points[0];
@@ -560,7 +877,35 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 		if (i >= axis.length) i = axis.length - 1;
 		return i;
 	}
+	_matrix_hover_text(pt){
+		if (pt == null || pt.x == null || pt.y == null) return '';
+		const pa = this.parent.arrayControl && this.parent.arrayControl.pa;
+		if (pa == null) return '';
+		const n = pa.size;
+		const j = Math.round(Number(pt.x));
+		const i = Math.round(Number(pt.y));
+		if (i < 1 || j < 1 || i > n || j > n) return '';
+		const k = (i - 1) * n + (j - 1);
+		let text = `i = ${i}, j = ${j}`;
+		if (this._plotKind === 'z' && pa.zRe){
+			const re = pa.zRe[k];
+			const im = pa.zIm ? pa.zIm[k] : 0;
+			text += `<br>Z = ${re.toFixed(3)} ${im >= 0 ? '+' : '−'} ${Math.abs(im).toFixed(3)} j Ω`;
+			return text;
+		}
+		if (this._plotKind === 's' && pa.sRe){
+			const re = pa.sRe[k];
+			const im = pa.sIm ? pa.sIm[k] : 0;
+			const mag = Math.hypot(re, im);
+			const db = 20 * Math.log10(Math.max(mag, 1e-30));
+			text += `<br>|S| = ${db.toFixed(2)} dB`;
+			text += `<br>S = ${re.toFixed(4)} ${im >= 0 ? '+' : '−'} ${Math.abs(im).toFixed(4)} j`;
+			return text;
+		}
+		return text;
+	}
 	_hover_text(pt){
+		if (this._plotKind === 'z' || this._plotKind === 's') return this._matrix_hover_text(pt);
 		const ff = this.ff;
 		if (ff == null || ff.dirMax == null) return '';
 		const coords = this._point_coords(pt);
@@ -619,7 +964,7 @@ export class ScenePlotFarfield2DPlotly extends SceneObjectABC{
 		const pwr = (arrayControl === undefined) ? undefined : arrayControl.powerControl;
 		const pa = (arrayControl === undefined) ? null : arrayControl.pa;
 		if (pwr !== undefined && pa != null){
-			const eirp = (total / ff.maxValue) * ff.dirMax * pa.totalPowerWatts(pwr.getWatts());
+			const eirp = (total / ff.maxValue) * ff.dirMax * pa.acceptedPowerWatts(pwr.getWatts());
 			text += `<br>EIRP: ${pwr.formatEirp(eirp)}`;
 		}
 		return text;

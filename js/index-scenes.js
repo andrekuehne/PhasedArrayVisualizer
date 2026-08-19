@@ -7,9 +7,11 @@ import {FarfieldDomains} from "./phasedarray/farfield.js"
 import {GeometryViews} from "./phasedarray/geometry-views.js"
 import {SteeringDomains} from "./phasedarray/steering.js"
 import {Illuminations} from "./phasedarray/illumination.js"
-import {ElementCosN, ElementTypes, exponentFromPeakDbi, MIN_ELEMENT_GAIN_DBI} from "./phasedarray/element.js"
+import {ElementCosN, ElementGreenPec, ElementGreenSlab, ElementTypes, exponentFromPeakDbi, MIN_ELEMENT_GAIN_DBI, PATTERN_GREEN_PEC, PATTERN_GREEN_SLAB} from "./phasedarray/element.js"
 import {Tapers} from "./phasedarray/tapers.js"
 import {defaultWatts, formatPower, formatPowerValue, isPowerScope, isPowerUnit, wattsFrom} from "./phasedarray/power.js"
+import {GREEN_PEC_AUTO_ISOLATE_N, MATCHED_AUTO_ISOLATE_N, nMuFromGeometry, Z_REF} from "./phasedarray/matched.js"
+import {getRadiatedPowerKernel, zSelfPecDipole, zSelfSlabDipole} from "./wasm/init.js"
 import {linspace} from "./util.js";
 /** @import { SceneQueue } from "./scene/scene-queue.js" */
 
@@ -45,20 +47,412 @@ const CHANGE_PA 	= 1 << 5;
 export class SceneControlPhasedArray extends SceneControl{
 	static autoUpdateURL = false;
 	constructor(parent){
-		super(parent, ['phase-bits', 'atten-lsb', 'atten-bits', 'atten-manual', 'phase-manual', 'phase-dither']);
+		super(parent, ['phase-bits', 'atten-lsb', 'atten-bits', 'atten-manual', 'phase-manual', 'phase-dither', 'coupling', 'coupling-z0-re', 'coupling-z0-im', 'coupling-xnn', 'coupling-alpha', 'coupling-beta', 'coupling-aniso', 'coupling-eps-x', 'coupling-eps-y', 'coupling-att', 'steer-law']);
 		this.pa = null;
+		this._matchedFreq = NaN;
+		this._matchedKind = null;
+		this._matchedN = null;
+		this._matchedModel = null;
+		this._matchedXnn = NaN;
+		this._matchedAlpha = NaN;
+		this._matchedBeta = NaN;
+		this._matchedAniso = NaN;
+		this._matchedAtt = NaN;
+		this._matchedEpsX = NaN;
+		this._matchedEpsY = NaN;
+		this._matchedZ0Re = NaN;
+		this._matchedZ0Im = NaN;
+		this._matchedH = NaN;
+		this._matchedEll = NaN;
+		this._matchedA = NaN;
+		this._matchedGreenZ0 = NaN;
+		this._matchedXSelf = NaN;
+		this._matchedEpsR = NaN;
+		this._matchedHSub = NaN;
+		this._matchedTanDelta = NaN;
+		this._steerFreq = NaN;
 		this.geometryControl = new SceneControlGeometry(this);
 		this.taperControl = new SceneControlAllTapers(this);
 		this.steerControl = new SceneControlSteeringDomain(this);
 		this.illumControl = new SceneControlIllumination(this);
 		this.elementControl = new SceneControlElement(this);
 		this.powerControl = new SceneControlPower(this);
+		this._steerLawRadios = {
+			geometric: document.getElementById(this.prepend + '-steer-law-geometric'),
+			conjugate: document.getElementById(this.prepend + '-steer-law-conjugate'),
+		};
+		this._bind_mode_radios('steer-law', this._steerLawRadios);
+		this.sync_mode_radios();
+		this.addEventListener('scene-loaded', () => {
+			this.migrate_coupling_url();
+			this.sync_mode_radios();
+		});
+		this.addEventListener('reset', () => {
+			this.find_element('coupling').value = 'isolated';
+			this.find_element('steer-law').value = 'geometric';
+			this.find_element('coupling-xnn').value = '0';
+			this.find_element('coupling-alpha').value = '2';
+			this.find_element('coupling-beta').value = '0';
+			this.find_element('coupling-aniso').value = '0';
+			this.find_element('coupling-eps-x').value = '1';
+			this.find_element('coupling-eps-y').value = '1';
+			this.find_element('coupling-att').value = '0';
+			this.find_element('coupling-z0-re').value = '45';
+			this.find_element('coupling-z0-im').value = '5';
+			this.sync_mode_radios();
+		});
 		this.add_event_types(
 			'phased-array-changed',
 			'phased-array-phase-changed',
 			'phased-array-attenuation-changed',
 			'phased-array-calculation-changed',
 		);
+	}
+	_bind_mode_radios(key, radios){
+		for (const radio of Object.values(radios)){
+			if (radio === null) continue;
+			radio.addEventListener('change', () => {
+				if (!radio.checked) return;
+				this.find_element(key).value = radio.value;
+				this.find_element(key).dispatchEvent(new Event('change'));
+			});
+		}
+	}
+	sync_mode_radios(){
+		const law = this.steerLaw();
+		for (const [value, radio] of Object.entries(this._steerLawRadios || {})){
+			if (radio) radio.checked = value === law;
+		}
+		const couplingDiv = document.getElementById(this.prepend + '-coupling-div');
+		const z0ReDiv = document.getElementById(this.prepend + '-coupling-z0-re-div');
+		const z0ImDiv = document.getElementById(this.prepend + '-coupling-z0-im-div');
+		const xnnDiv = document.getElementById(this.prepend + '-coupling-xnn-div');
+		const alphaDiv = document.getElementById(this.prepend + '-coupling-alpha-div');
+		const betaDiv = document.getElementById(this.prepend + '-coupling-beta-div');
+		const anisoDiv = document.getElementById(this.prepend + '-coupling-aniso-div');
+		const epsXDiv = document.getElementById(this.prepend + '-coupling-eps-x-div');
+		const epsYDiv = document.getElementById(this.prepend + '-coupling-eps-y-div');
+		const attDiv = document.getElementById(this.prepend + '-coupling-att-div');
+		const hideMatch = () => {
+			if (couplingDiv) couplingDiv.style.display = 'none';
+			if (z0ReDiv) z0ReDiv.style.display = 'none';
+			if (z0ImDiv) z0ImDiv.style.display = 'none';
+			if (xnnDiv) xnnDiv.style.display = 'none';
+			if (alphaDiv) alphaDiv.style.display = 'none';
+			if (betaDiv) betaDiv.style.display = 'none';
+			if (anisoDiv) anisoDiv.style.display = 'none';
+			if (epsXDiv) epsXDiv.style.display = 'none';
+			if (epsYDiv) epsYDiv.style.display = 'none';
+			if (attDiv) attDiv.style.display = 'none';
+		};
+		if (this.isGreenElement()){
+			hideMatch();
+			return;
+		}
+		const model = this.matchModel();
+		const matched = model !== 'isolated';
+		const powerLaw = model === 'per-port' || model === 'common';
+		const prop = model === 'propagation';
+		const showZ0 = model === 'common' || prop;
+		const showX = matched;
+		if (couplingDiv) couplingDiv.style.display = 'flex';
+		if (z0ReDiv) z0ReDiv.style.display = showZ0 ? 'flex' : 'none';
+		if (z0ImDiv) z0ImDiv.style.display = showX ? 'flex' : 'none';
+		if (xnnDiv) xnnDiv.style.display = showX ? 'flex' : 'none';
+		if (alphaDiv) alphaDiv.style.display = powerLaw ? 'flex' : 'none';
+		if (betaDiv) betaDiv.style.display = powerLaw ? 'flex' : 'none';
+		if (anisoDiv) anisoDiv.style.display = powerLaw ? 'flex' : 'none';
+		if (epsXDiv) epsXDiv.style.display = prop ? 'flex' : 'none';
+		if (epsYDiv) epsYDiv.style.display = prop ? 'flex' : 'none';
+		if (attDiv) attDiv.style.display = prop ? 'flex' : 'none';
+	}
+	/** Isolated | per-port | common | propagation (legacy matched+match-style migrated on load). */
+	matchModel(){
+		const v = this.find_element('coupling').value;
+		if (v === 'per-port' || v === 'common' || v === 'propagation') return v;
+		return 'isolated';
+	}
+	isGreenPec(){
+		return this.elementControl != null && this.elementControl.selected_class() === ElementGreenPec;
+	}
+	isGreenSlab(){
+		return this.elementControl != null && this.elementControl.selected_class() === ElementGreenSlab;
+	}
+	isGreenElement(){
+		return this.isGreenPec() || this.isGreenSlab();
+	}
+	greenMatchModel(){
+		if (this.isGreenPec()) return 'green-pec';
+		if (this.isGreenSlab()) return 'green-slab';
+		return this.matchModel();
+	}
+	/**
+	 * Map legacy URL coupling=matched (+ match-style) onto the Matching select.
+	 */
+	migrate_coupling_url(){
+		const ele = this.find_element('coupling');
+		const url = FindSceneURL();
+		const raw = url.get_param('coupling');
+		let v = raw != null ? raw : ele.value;
+		if (v === 'matched'){
+			const style = url.get_param('match-style');
+			v = style === 'per-port' ? 'per-port' : 'common';
+		}
+		else if (v !== 'per-port' && v !== 'common' && v !== 'propagation'){
+			v = 'isolated';
+		}
+		if (ele.value !== v) ele.value = v;
+		if (url.get_param('match-style') != null) url.delete('match-style');
+		if (typeof this.parent.update_url_parameters === 'function') this.parent.update_url_parameters();
+	}
+	couplingMode(){
+		if (this.isGreenElement()){
+			const n = this.pa ? this.pa.size : 0;
+			return n > GREEN_PEC_AUTO_ISOLATE_N ? 'isolated' : 'matched';
+		}
+		return this.matchModel() === 'isolated' ? 'isolated' : 'matched';
+	}
+	_matrix_domain_selected(){
+		const ff = this.parent.farfieldControl;
+		return ff != null && typeof ff.isMatrixDomain === 'function' && ff.isMatrixDomain();
+	}
+	/**
+	 * Force Isolated when a rebuilt array is too large for matched S.
+	 * A later manual Coupling click is not a rebuild, so it stays matched.
+	 * @param {number} n
+	 */
+	applyCouplingSizeSafeguard(n){
+		if (this.isGreenElement()) return;
+		if (!(n > MATCHED_AUTO_ISOLATE_N) || this.couplingMode() !== 'matched') return;
+		this.find_element('coupling').value = 'isolated';
+		this.sync_mode_radios();
+		if (typeof this.parent.update_url_parameters === 'function') this.parent.update_url_parameters();
+	}
+	steerLaw(){
+		return this.find_element('steer-law').value === 'conjugate' ? 'conjugate' : 'geometric';
+	}
+	couplingXnn(){
+		const v = Number(this.find_element('coupling-xnn').value);
+		return Number.isFinite(v) ? v : 0;
+	}
+	couplingAlpha(){
+		const v = Number(this.find_element('coupling-alpha').value);
+		if (!Number.isFinite(v) || v < 0) return 2;
+		return v;
+	}
+	couplingBeta(){
+		const v = Number(this.find_element('coupling-beta').value);
+		return Number.isFinite(v) ? v : 0;
+	}
+	couplingAniso(){
+		const v = Number(this.find_element('coupling-aniso').value);
+		return Number.isFinite(v) ? v : 0;
+	}
+	couplingEpsX(){
+		const v = Number(this.find_element('coupling-eps-x').value);
+		return Number.isFinite(v) && v >= 0 ? v : 1;
+	}
+	couplingEpsY(){
+		const v = Number(this.find_element('coupling-eps-y').value);
+		return Number.isFinite(v) && v >= 0 ? v : 1;
+	}
+	couplingAtt(){
+		const v = Number(this.find_element('coupling-att').value);
+		if (!Number.isFinite(v) || v < 0) return 0;
+		return v;
+	}
+	couplingZ0Re(){
+		const v = Number(this.find_element('coupling-z0-re').value);
+		return Number.isFinite(v) && v > 0 ? v : Z_REF;
+	}
+	couplingXSelf(){
+		const v = Number(this.find_element('coupling-z0-im').value);
+		return Number.isFinite(v) ? v : 0;
+	}
+	/** Common-Z0 / Propagation kernel args: [z_c, x_self]. Per-port passes z_c = 0 so the solver runs. */
+	commonZ0Args(){
+		const xSelf = this.couplingXSelf();
+		if (this.matchModel() === 'per-port') return [0, xSelf];
+		return [this.couplingZ0Re(), xSelf];
+	}
+	frequencyScale(){
+		const ele = this.parent.find_element('farfield-frequency', false);
+		const v = ele ? Number(ele.value) : 1;
+		return Number.isFinite(v) && v > 0 ? v : 1;
+	}
+	control_changed(key){
+		super.control_changed(key);
+		if (key === 'coupling' || key === 'steer-law'
+			|| key === 'coupling-xnn' || key === 'coupling-alpha'
+			|| key === 'coupling-beta' || key === 'coupling-aniso'
+			|| key === 'coupling-eps-x' || key === 'coupling-eps-y' || key === 'coupling-att'
+			|| key === 'coupling-z0-re' || key === 'coupling-z0-im'){
+			this.sync_mode_radios();
+			if (typeof this.parent.update_url_parameters === 'function') this.parent.update_url_parameters();
+			this.request_recompute();
+		}
+	}
+	/** Fill S, T, Z from the WASM kernel (faer LU/Cholesky). Isolated skips this. */
+	compute_matched_basis(freq){
+		const pa = this.pa;
+		const ep = pa.elementPattern;
+		const kind = ep ? ep.kind : 0;
+		const elemN = ep ? ep.n : 0;
+		const n = pa.size;
+		if (kind === PATTERN_GREEN_PEC){
+			if (n > GREEN_PEC_AUTO_ISOLATE_N) return;
+			const h = ep.h;
+			const ell = ep.ell;
+			const a = ep.a;
+			const zc = ep.z0;
+			const xSelf = ep.xself;
+			if (
+				pa.tRe && pa.tRe.length === n * n
+				&& pa.zRe && pa.zRe.length === n * n
+				&& this._matchedFreq === freq
+				&& this._matchedKind === kind
+				&& this._matchedH === h
+				&& this._matchedEll === ell
+				&& this._matchedA === a
+				&& this._matchedGreenZ0 === zc
+				&& this._matchedXSelf === xSelf
+			) return;
+			const kernel = getRadiatedPowerKernel();
+			kernel.form_green_pec_dipole(pa.geometry.x, pa.geometry.y, freq, h, ell, a, Z_REF, zc, xSelf);
+			pa.set_matched_basis(
+				kernel.take_z0(),
+				kernel.take_s_re(),
+				kernel.take_s_im(),
+				kernel.take_t_re(),
+				kernel.take_t_im(),
+				kernel.take_z0_im(),
+				kernel.take_z_re(),
+				kernel.take_z_im()
+			);
+			this._matchedFreq = freq;
+			this._matchedKind = kind;
+			this._matchedH = h;
+			this._matchedEll = ell;
+			this._matchedA = a;
+			this._matchedGreenZ0 = zc;
+			this._matchedXSelf = xSelf;
+			this._matchedModel = 'green-pec';
+			return;
+		}
+		if (kind === PATTERN_GREEN_SLAB){
+			if (n > GREEN_PEC_AUTO_ISOLATE_N) return;
+			const h = ep.h;
+			const ell = ep.ell;
+			const a = ep.a;
+			const epsR = ep.epsR;
+			const hSub = ep.hSub;
+			const tanDelta = ep.tanDelta;
+			const zc = ep.z0;
+			const xSelf = ep.xself;
+			if (
+				pa.tRe && pa.tRe.length === n * n
+				&& pa.zRe && pa.zRe.length === n * n
+				&& this._matchedFreq === freq
+				&& this._matchedKind === kind
+				&& this._matchedH === h
+				&& this._matchedEll === ell
+				&& this._matchedA === a
+				&& this._matchedEpsR === epsR
+				&& this._matchedHSub === hSub
+				&& this._matchedTanDelta === tanDelta
+				&& this._matchedGreenZ0 === zc
+				&& this._matchedXSelf === xSelf
+			) return;
+			const kernel = getRadiatedPowerKernel();
+			kernel.form_green_slab_dipole(
+				pa.geometry.x, pa.geometry.y, freq,
+				h, ell, a, epsR, hSub, tanDelta,
+				Z_REF, zc, xSelf
+			);
+			pa.set_matched_basis(
+				kernel.take_z0(),
+				kernel.take_s_re(),
+				kernel.take_s_im(),
+				kernel.take_t_re(),
+				kernel.take_t_im(),
+				kernel.take_z0_im(),
+				kernel.take_z_re(),
+				kernel.take_z_im()
+			);
+			this._matchedFreq = freq;
+			this._matchedKind = kind;
+			this._matchedH = h;
+			this._matchedEll = ell;
+			this._matchedA = a;
+			this._matchedEpsR = epsR;
+			this._matchedHSub = hSub;
+			this._matchedTanDelta = tanDelta;
+			this._matchedGreenZ0 = zc;
+			this._matchedXSelf = xSelf;
+			this._matchedModel = 'green-slab';
+			return;
+		}
+		const model = this.matchModel();
+		const xnn = this.couplingXnn();
+		const alpha = this.couplingAlpha();
+		const beta = this.couplingBeta();
+		const aniso = this.couplingAniso();
+		const att = this.couplingAtt();
+		const epsX = this.couplingEpsX();
+		const epsY = this.couplingEpsY();
+		const [zcRe, xSelf] = this.commonZ0Args();
+		if (
+			pa.tRe && pa.tRe.length === n * n
+			&& pa.zRe && pa.zRe.length === n * n
+			&& this._matchedFreq === freq
+			&& this._matchedKind === kind
+			&& this._matchedN === elemN
+			&& this._matchedModel === model
+			&& this._matchedXnn === xnn
+			&& this._matchedAlpha === alpha
+			&& this._matchedBeta === beta
+			&& this._matchedAniso === aniso
+			&& this._matchedAtt === att
+			&& this._matchedEpsX === epsX
+			&& this._matchedEpsY === epsY
+			&& this._matchedZ0Re === zcRe
+			&& this._matchedZ0Im === xSelf
+		) return;
+		const kernel = getRadiatedPowerKernel();
+		const nMu = nMuFromGeometry(pa.geometry, freq);
+		kernel.set_quadrature(nMu, 2);
+		kernel.compute_j0(pa.geometry.x, pa.geometry.y, freq, kind, elemN);
+		if (model === 'propagation'){
+			kernel.form_matched_s_propagation(
+				Z_REF, pa.geometry.x, pa.geometry.y, xnn, att, epsX, epsY, freq, zcRe, xSelf
+			);
+		}
+		else{
+			kernel.form_matched_s(Z_REF, pa.geometry.x, pa.geometry.y, xnn, alpha, beta * freq, aniso, zcRe, xSelf);
+		}
+		pa.set_matched_basis(
+			kernel.take_z0(),
+			kernel.take_s_re(),
+			kernel.take_s_im(),
+			kernel.take_t_re(),
+			kernel.take_t_im(),
+			kernel.take_z0_im(),
+			kernel.take_z_re(),
+			kernel.take_z_im()
+		);
+		this._matchedFreq = freq;
+		this._matchedKind = kind;
+		this._matchedN = elemN;
+		this._matchedModel = model;
+		this._matchedXnn = xnn;
+		this._matchedAlpha = alpha;
+		this._matchedBeta = beta;
+		this._matchedAniso = aniso;
+		this._matchedAtt = att;
+		this._matchedEpsX = epsX;
+		this._matchedEpsY = epsY;
+		this._matchedZ0Re = zcRe;
+		this._matchedZ0Im = xSelf;
 	}
 	/**
 	* Add callable objects to queue.
@@ -79,6 +473,18 @@ export class SceneControlPhasedArray extends SceneControl{
 		if (this.taperControl.calculationWaiting) changeFlag |= CHANGE_ATTEN;
 		if (this.changed['phase-bits'] || this.changed['phase-dither']) changeFlag |= CHANGE_PHASEQ;
 		if (this.changed['atten-bits'] || this.changed['atten-lsb']) changeFlag |= CHANGE_ATTENQ;
+		if (this.changed['steer-law']) changeFlag |= CHANGE_PHASE;
+		if (this.changed['coupling']
+			|| this.changed['coupling-xnn'] || this.changed['coupling-alpha']
+			|| this.changed['coupling-beta'] || this.changed['coupling-aniso']
+			|| this.changed['coupling-eps-x'] || this.changed['coupling-eps-y']
+			|| this.changed['coupling-att']
+			|| this.changed['coupling-z0-re'] || this.changed['coupling-z0-im']){
+			changeFlag |= CHANGE_PHASE;
+			this.farfieldNeedsCalculation = true;
+		}
+		const freq = this.frequencyScale();
+		if (this.steerLaw() === 'conjugate' && this._steerFreq !== freq) changeFlag |= CHANGE_PHASE;
 
 		if (this.elementControl.calculationWaiting) this.farfieldNeedsCalculation = true;
 
@@ -86,6 +492,8 @@ export class SceneControlPhasedArray extends SceneControl{
 			queue.add('Updating array...', () => {
 					let first = this.pa === null;
 					this.pa = new PhasedArray(this.geometryControl.activeGeometry);
+					this.applyCouplingSizeSafeguard(this.pa.size);
+					this.pa.coupling = this.couplingMode();
 					this.trigger_event('phased-array-changed', this.pa);
 					if (first) this.load_hidden_controls();
 				}
@@ -106,11 +514,60 @@ export class SceneControlPhasedArray extends SceneControl{
 				this.pa.compute_illumination();
 			});
 		}
+		const greenOversize = this.isGreenElement()
+			&& this.pa != null
+			&& this.pa.size > GREEN_PEC_AUTO_ISOLATE_N
+			&& !this.geometryControl.calculationWaiting;
+		const coupling = this.couplingMode();
+		const wantsMatch = !greenOversize && (coupling === 'matched' || this._matrix_domain_selected());
+		if (wantsMatch){
+			const n = this.pa ? this.pa.size : 0;
+			const hasT = this.pa && this.pa.tRe && this.pa.tRe.length === n * n;
+			const hasZ = this.pa && this.pa.zRe && this.pa.zRe.length === n * n;
+			const [zcRe, xSelf] = this.commonZ0Args();
+			const basisDirty = this.pa === null
+				|| !hasT
+				|| !hasZ
+				|| this.geometryControl.calculationWaiting
+				|| this.elementControl.calculationWaiting
+				|| this._matchedFreq !== freq
+				|| this._matchedModel !== this.greenMatchModel()
+				|| (!this.isGreenElement() && (
+					this._matchedXnn !== this.couplingXnn()
+					|| this._matchedAlpha !== this.couplingAlpha()
+					|| this._matchedBeta !== this.couplingBeta()
+					|| this._matchedAniso !== this.couplingAniso()
+					|| this._matchedAtt !== this.couplingAtt()
+					|| this._matchedEpsX !== this.couplingEpsX()
+					|| this._matchedEpsY !== this.couplingEpsY()
+					|| this._matchedZ0Re !== zcRe
+					|| this._matchedZ0Im !== xSelf
+				));
+			if (basisDirty){
+				queue.add('Computing matched S...', () => {
+					if (this.isGreenElement()){
+						if (this.pa.size > GREEN_PEC_AUTO_ISOLATE_N) return;
+						this.compute_matched_basis(freq);
+						return;
+					}
+					if (this.couplingMode() !== 'matched' && !this._matrix_domain_selected()) return;
+					this.compute_matched_basis(freq);
+				});
+				if (coupling === 'matched'){
+					changeFlag |= CHANGE_PHASE;
+					this.farfieldNeedsCalculation = true;
+				}
+			}
+		}
 		if (changeFlag & CHANGE_PHASE){
 			queue.add('Calculating phase...', () => {
 				const [theta, phi] = this.steerControl.get_theta_phi();
 				this.pa.set_theta_phi(theta, phi);
-				this.pa.compute_phase();
+				this.pa.coupling = this.couplingMode();
+				if (this.steerLaw() === 'conjugate') this.pa.compute_conjugate_phase(freq);
+				else this.pa.compute_phase();
+				this._steerFreq = freq;
+				this.clear_changed('steer-law', 'coupling', 'coupling-xnn', 'coupling-alpha', 'coupling-beta', 'coupling-aniso', 'coupling-eps-x', 'coupling-eps-y', 'coupling-att', 'coupling-z0-re', 'coupling-z0-im');
 			});
 		}
 		if (changeFlag & CHANGE_ATTEN){
@@ -406,9 +863,19 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 	constructor(parent, key){
 		super(parent, key, FarfieldDomains);
 		this.ff = null;
-		this.validMaxMonitors = new Set(['directivity', 'ideal-directivity', 'pattern-metrics']);
+		this._ffDirty = false;
+		this._wasMatrix = false;
+		this.validMaxMonitors = new Set(['directivity', 'pattern-metrics']);
 		this.maxMonitors = {};
-		this.add_event_types('farfield-changed', 'farfield-calculation-complete');
+		this.add_event_types('farfield-changed', 'farfield-calculation-complete', 'matrix-plot-ready');
+	}
+	isMatrixDomain(){
+		const kls = this.selected_class();
+		return kls != null && (kls.domain === 'z' || kls.domain === 's');
+	}
+	matrixKind(){
+		if (!this.isMatrixDomain()) return null;
+		return this.selected_class().domain;
 	}
 	control_changed(key){
 		super.control_changed(key);
@@ -416,7 +883,7 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 			this.request_recompute();
 			return;
 		}
-		if (key !== 'farfield-frequency' || this.ff === null) return;
+		if (key !== 'farfield-frequency' || (this.ff === null && !this.isMatrixDomain())) return;
 		this.parent.update_url_parameters();
 	}
 	/**
@@ -434,6 +901,16 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 		if (!(key in this.maxMonitors)) this.maxMonitors[key] = [];
 		this.maxMonitors[key].push(callback);
 	}
+	_notify_farfield_complete(){
+		this.trigger_event('farfield-calculation-complete', this.ff);
+		for (const [key, value] of Object.entries(this.maxMonitors)){
+			let val;
+			if (key == 'directivity') val = this.ff.dirMax;
+			else if (key == 'pattern-metrics') val = this.ff.patternMetrics;
+			else throw Error(`Unknown max key ${key}.`)
+			value.forEach((e) => e(val));
+		}
+	}
 	/**
 	* Add callable objects to queue.
 	*
@@ -443,9 +920,22 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 	* */
 	add_to_queue(queue){
 		const arrayControl = this.parent.arrayControl;
-		let needsRecalc = arrayControl.farfieldNeedsCalculation;
+		if (this.isMatrixDomain()){
+			if (this.changed['farfield-frequency'] || arrayControl.farfieldNeedsCalculation){
+				this._ffDirty = true;
+			}
+			this._wasMatrix = true;
+			this.clear_changed('farfield-domain', 'farfield-points', 'farfield-uv-bound', 'farfield-frequency');
+			queue.add('Notifying matrix plot...', () => {
+				this.trigger_event('matrix-plot-ready', arrayControl.pa);
+			});
+			this.needsRedraw = false;
+			return;
+		}
 
-		if (this.changed['farfield-points'] || this.changed['farfield-frequency'] || this.changed['farfield-uv-bound'] || this.changed['farfield-domain'] || this.ff === null){
+		let needsRecalc = arrayControl.farfieldNeedsCalculation;
+		const domainClassChanged = this.ff != null && this.ff.domain !== this.selected_class().domain;
+		if (this.changed['farfield-points'] || this.changed['farfield-frequency'] || this.changed['farfield-uv-bound'] || this.ff === null || this._ffDirty || domainClassChanged){
 			queue.add('Creating farfield mesh...', () => {
 				this.ff = this.build_active_object();
 				this.trigger_event('farfield-changed', this.ff);
@@ -457,16 +947,16 @@ export class SceneControlFarfieldDomain extends SceneControlWithSelector{
 				return this.ff.calculator_loop(arrayControl.pa)
 			});
 			queue.add("Notifying farfield change...", () => {
-				this.trigger_event('farfield-calculation-complete', this.ff);
-				for (const [key, value] of Object.entries(this.maxMonitors)){
-					let val;
-					if (key == 'directivity') val = this.ff.dirMax;
-					else if (key == "ideal-directivity") val = this.ff.idealDirectivity;
-					else if (key == 'pattern-metrics') val = this.ff.patternMetrics;
-					else throw Error(`Unknown max key ${key}.`)
-					value.forEach((e) => e(val));
-				}
+				this._ffDirty = false;
+				this._wasMatrix = false;
+				this._notify_farfield_complete();
 			})
+		}
+		else if (this._wasMatrix && this.ff != null){
+			this._wasMatrix = false;
+			queue.add("Notifying farfield change...", () => {
+				this._notify_farfield_complete();
+			});
 		}
 		this.needsRedraw = needsRecalc;
 	}
@@ -674,6 +1164,8 @@ export class SceneControlIllumination extends SceneControlWithSelectorAutoBuild{
 	}
 }
 
+const MATCH_HELP = "Set Z0 to Re(Z11) and Self X to −Im(Z11) of one isolated element at the current frequency. Not a scan-impedance match; array Sii still has mutual leftover.";
+
 export class SceneControlElement extends SceneControlWithSelectorAutoBuild{
 	static autoUpdateURL = false;
 	constructor(parent){
@@ -698,12 +1190,46 @@ export class SceneControlElement extends SceneControlWithSelectorAutoBuild{
 		host.appendChild(div);
 		this.nDiv = div;
 		this.nInput = ele;
+
+		const note = document.createElement('div');
+		note.className = 'form-note';
+		note.id = parent.prepend + '-element-green-note';
+		note.textContent = 'S,T from the Green function. First build is about 2 s at 32×32 for PEC; slab is slower.';
+		note.title = 'Unique-lag PEC kernel fills Z; Kurokawa S,T from that Z at the common real Z0. The 32×32 LU is about 2 s in WASM.';
+		note.style.display = 'none';
+		host.appendChild(note);
+		this.greenNote = note;
+
+		const matchDiv = document.createElement('div');
+		matchDiv.classList = "form-group";
+		matchDiv.id = parent.prepend + "-element-match-div";
+		matchDiv.style.display = 'none';
+		const matchLbl = document.createElement('label');
+		matchLbl.setAttribute('for', parent.prepend + "-element-match");
+		matchLbl.textContent = "Match";
+		matchLbl.title = MATCH_HELP;
+		const matchBtn = document.createElement('button');
+		matchBtn.type = 'button';
+		matchBtn.id = parent.prepend + "-element-match";
+		matchBtn.textContent = "Match";
+		matchBtn.title = MATCH_HELP;
+		matchDiv.title = MATCH_HELP;
+		matchDiv.appendChild(matchLbl);
+		matchDiv.appendChild(matchBtn);
+		host.appendChild(matchDiv);
+		this.matchDiv = matchDiv;
+		this.matchBtn = matchBtn;
+		matchBtn.addEventListener('click', () => this.apply_green_match());
+
 		this.addEventListener('active-class-changed', () => {
 			this.release_gain_html_min();
 			this.update_n_display();
+			this.update_green_note();
+			if (typeof this.parent.sync_mode_radios === 'function') this.parent.sync_mode_radios();
 		});
 		this.install_gain_editing();
 		this.update_n_display();
+		this.update_green_note();
 	}
 	install_gain_editing(){
 		const gainEle = this.find_element('element-gain');
@@ -764,6 +1290,7 @@ export class SceneControlElement extends SceneControlWithSelectorAutoBuild{
 		if (key === this.primaryKey) this.request_recompute();
 	}
 	update_n_display(){
+		if (!this.nDiv) return;
 		const isCos = this.selected_class() === ElementCosN;
 		this.nDiv.style.display = isCos ? "flex" : "none";
 		if (!isCos) return;
@@ -773,12 +1300,74 @@ export class SceneControlElement extends SceneControlWithSelectorAutoBuild{
 		const g = Number.isFinite(gain) ? Math.max(gain, MIN_ELEMENT_GAIN_DBI) : ElementCosN.controls['element-gain'].default;
 		this.nInput.value = exponentFromPeakDbi(g).toFixed(3);
 	}
+	update_green_note(){
+		const cls = this.selected_class();
+		const isPec = cls === ElementGreenPec;
+		const isSlab = cls === ElementGreenSlab;
+		const isGreen = isPec || isSlab;
+		if (this.greenNote){
+			this.greenNote.style.display = isGreen ? 'block' : 'none';
+			if (isSlab){
+				this.greenNote.textContent = 'S,T from the grounded-slab Green function (Sommerfeld). First build can take seconds at 32×32.';
+				this.greenNote.title = 'Unique-lag slab kernel fills Z; Kurokawa S,T from that Z at the common real Z0. Surface-wave power is not in the array-factor pattern.';
+			}
+			else if (isPec){
+				this.greenNote.textContent = 'S,T from the PEC Green function. First build is about 2 s at 32×32.';
+				this.greenNote.title = 'Unique-lag PEC kernel fills Z; Kurokawa S,T from that Z at the common real Z0. The 32×32 LU is about 2 s in WASM.';
+			}
+		}
+		if (this.matchDiv) this.matchDiv.style.display = isGreen ? 'flex' : 'none';
+		const typeEle = this.find_element('element-type', false);
+		if (typeEle){
+			if (isGreen && cls.help) typeEle.title = cls.help;
+			else typeEle.removeAttribute('title');
+		}
+	}
+	apply_green_match(){
+		const cls = this.selected_class();
+		if (cls !== ElementGreenPec && cls !== ElementGreenSlab) return;
+		const ep = this.build_active_object();
+		const freq = typeof this.parent.frequencyScale === 'function' ? this.parent.frequencyScale() : 1;
+		let z;
+		try {
+			if (cls === ElementGreenSlab){
+				z = zSelfSlabDipole(ep.h, ep.ell, ep.a, freq, ep.epsR, ep.hSub, ep.tanDelta);
+			}
+			else{
+				z = zSelfPecDipole(ep.h, ep.ell, ep.a, freq);
+			}
+		}
+		catch {
+			return;
+		}
+		const re = z[0];
+		const im = z[1];
+		if (!Number.isFinite(re) || !Number.isFinite(im) || !(re > 0)) return;
+		const z0Ctrl = cls.controls['element-z0'];
+		let zc = re;
+		if (z0Ctrl.min != null && zc < z0Ctrl.min) zc = z0Ctrl.min;
+		if (z0Ctrl.max != null && zc > z0Ctrl.max) zc = z0Ctrl.max;
+		const z0Ele = this.find_element('element-z0');
+		const xEle = this.find_element('element-xself');
+		z0Ele.value = String(zc);
+		xEle.value = String(-im);
+		z0Ele.dispatchEvent(new Event('input', {bubbles: true}));
+		xEle.dispatchEvent(new Event('input', {bubbles: true}));
+		z0Ele.dispatchEvent(new Event('change', {bubbles: true}));
+		xEle.dispatchEvent(new Event('change', {bubbles: true}));
+		let scene = this.parent;
+		while (scene != null && typeof scene.update_url_parameters !== 'function'){
+			scene = scene.parent;
+		}
+		if (scene != null) scene.update_url_parameters();
+	}
 	get calculationWaiting(){ return this.activeElement === null; }
 	add_to_queue(queue){
 		if (this.calculationWaiting){
 			queue.add('Building element pattern...', () => {
 					this.activeElement = this.build_active_object();
 					this.update_n_display();
+					this.update_green_note();
 				}
 			)
 		}

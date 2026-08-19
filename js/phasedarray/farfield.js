@@ -1,6 +1,6 @@
 import {linspace} from "../util.js";
-import {PATTERN_COS_N} from "./element.js";
-import {applyElementPattern, extractPatternMetrics, getFarfieldKernel} from "../wasm/init.js";
+import {GREEN_PEC_DEFAULT_ELL, GREEN_PEC_DEFAULT_H, GREEN_SLAB_DEFAULT_EPS_R, GREEN_SLAB_DEFAULT_H_SUB, GREEN_SLAB_DEFAULT_TAN_DELTA, PATTERN_COS_N, PATTERN_GREEN_PEC, PATTERN_GREEN_SLAB} from "./element.js";
+import {applyElementPattern, applyGreenPecPattern, applyGreenSlabPattern, extractPatternMetrics, getFarfieldKernel} from "../wasm/init.js";
 import {farfieldPoolSize, runFarfieldJob} from "../wasm/farfield-pool.js";
 
 /**
@@ -120,6 +120,11 @@ export class FarfieldABC{
 			mag: mag,
 			elementKind: pa.elementPattern?.kind ?? 0,
 			elementN: pa.elementPattern?.n ?? 0,
+			elementH: pa.elementPattern?.h ?? GREEN_PEC_DEFAULT_H,
+			elementEll: pa.elementPattern?.ell ?? GREEN_PEC_DEFAULT_ELL,
+			elementEpsR: pa.elementPattern?.epsR ?? GREEN_SLAB_DEFAULT_EPS_R,
+			elementHSub: pa.elementPattern?.hSub ?? GREEN_SLAB_DEFAULT_H_SUB,
+			elementTanDelta: pa.elementPattern?.tanDelta ?? GREEN_SLAB_DEFAULT_TAN_DELTA,
 		}
 	}
 	/**
@@ -144,8 +149,42 @@ export class FarfieldABC{
 	apply_element_pattern(domain, ax1, ax2, pars){
 		if (this._totalFlat == null) return;
 		const kind = Number(pars.elementKind) || 0;
-		const n = Number(pars.elementN) || 0;
+		if (kind === PATTERN_GREEN_PEC){
+			const h = Number(pars.elementH);
+			const ell = Number(pars.elementEll);
+			this.maxValue = applyGreenPecPattern(
+				domain,
+				as_f32(ax1),
+				as_f32(ax2),
+				this._totalFlat,
+				Number.isFinite(h) ? h : GREEN_PEC_DEFAULT_H,
+				Number.isFinite(ell) ? ell : GREEN_PEC_DEFAULT_ELL,
+				Number(this.frequencyScale)
+			);
+			return;
+		}
+		if (kind === PATTERN_GREEN_SLAB){
+			const h = Number(pars.elementH);
+			const ell = Number(pars.elementEll);
+			const epsR = Number(pars.elementEpsR);
+			const hSub = Number(pars.elementHSub);
+			const tanDelta = Number(pars.elementTanDelta);
+			this.maxValue = applyGreenSlabPattern(
+				domain,
+				as_f32(ax1),
+				as_f32(ax2),
+				this._totalFlat,
+				Number.isFinite(h) ? h : GREEN_PEC_DEFAULT_H,
+				Number.isFinite(ell) ? ell : GREEN_PEC_DEFAULT_ELL,
+				Number(this.frequencyScale),
+				Number.isFinite(epsR) ? epsR : GREEN_SLAB_DEFAULT_EPS_R,
+				Number.isFinite(hSub) ? hSub : GREEN_SLAB_DEFAULT_H_SUB,
+				Number.isFinite(tanDelta) ? tanDelta : GREEN_SLAB_DEFAULT_TAN_DELTA
+			);
+			return;
+		}
 		if (kind !== PATTERN_COS_N) return;
+		const n = Number(pars.elementN) || 0;
 		this.maxValue = applyElementPattern(
 			domain,
 			as_f32(ax1),
@@ -514,8 +553,29 @@ export class FarfieldLudwig3 extends FarfieldABC{
 	}
 }
 
+/** Stub Domain entries: plot Z/S matrices, not a farfield mesh. */
+export class FarfieldMatrixZ{
+	static title = 'Z';
+	static domain = 'z';
+	static args = ['farfield-frequency'];
+	static controls = {
+		'farfield-frequency': CON_FREQ,
+	};
+}
+
+export class FarfieldMatrixS{
+	static title = 'S';
+	static domain = 's';
+	static args = ['farfield-frequency'];
+	static controls = {
+		'farfield-frequency': CON_FREQ,
+	};
+}
+
 export const FarfieldDomains = [
 	FarfieldSpherical,
 	FarfieldUV,
 	FarfieldLudwig3,
+	FarfieldMatrixZ,
+	FarfieldMatrixS,
 ]

@@ -82,6 +82,17 @@ export class SceneObjectParameterMap{
 		if (this.label !== null && this.title !== undefined && this.title !== null){
 			this.label.innerHTML = this.title;
 		}
+		const help = this.cDict.help;
+		if (help){
+			this.ele.title = help;
+			if (this.label !== null) this.label.title = help;
+			if (this.div !== null) this.div.title = help;
+		}
+		else{
+			this.ele.removeAttribute('title');
+			if (this.label !== null) this.label.removeAttribute('title');
+			if (this.div !== null) this.div.removeAttribute('title');
+		}
 	}
 }
 
@@ -355,6 +366,7 @@ export class SceneControlWithSelector extends SceneControl{
 			const ele = document.createElement('option');
 			ele.value = x.title;
 			ele.innerHTML = x.title;
+			if (x.help) ele.title = x.help;
 			this.primarySelector.appendChild(ele);
 			for (const [k, v] of Object.entries(x.controls)){
 				const kk = wrap_prepend_s(k);

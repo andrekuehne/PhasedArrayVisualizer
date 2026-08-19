@@ -52,6 +52,39 @@ export class PatternMetrics {
     squint_deg: number;
 }
 
+export class RadiatedPowerKernel {
+    free(): void;
+    [Symbol.dispose](): void;
+    compute(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number): void;
+    compute_j0(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number): void;
+    fill_green_pec_dipole_z(x: Float32Array, y: Float32Array, frequency_scale: number, h: number, ell: number, a: number): void;
+    fill_green_slab_dipole_z(x: Float32Array, y: Float32Array, frequency_scale: number, h: number, ell: number, a: number, eps_r: number, h_sub: number, tan_delta: number): void;
+    fill_isolated(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number): void;
+    fill_isolated_range(x: Float32Array, y: Float32Array, frequency_scale: number, element_kind: number, element_n: number, sample0: number, sample_count: number): void;
+    form_from_z(z_ref: number, z_common_re: number, x_self: number): void;
+    form_gram(): void;
+    form_green_pec_dipole(x: Float32Array, y: Float32Array, frequency_scale: number, h: number, ell: number, a: number, z_ref: number, z_common_re: number, x_self: number): void;
+    form_green_slab_dipole(x: Float32Array, y: Float32Array, frequency_scale: number, h: number, ell: number, a: number, eps_r: number, h_sub: number, tan_delta: number, z_ref: number, z_common_re: number, x_self: number): void;
+    form_matched_s(z_ref: number, x: Float32Array, y: Float32Array, x_nn: number, alpha: number, beta: number, aniso: number, z_common_re: number, x_self: number): void;
+    form_matched_s_propagation(z_ref: number, x: Float32Array, y: Float32Array, x_nn: number, att: number, eps_x: number, eps_y: number, freq: number, z_common_re: number, x_self: number): void;
+    match_iterations(): number;
+    match_residual(): number;
+    n_elements(): number;
+    n_samples(): number;
+    constructor();
+    set_quadrature(n_mu: number, n_phi: number): void;
+    take_im(): Float32Array;
+    take_re(): Float32Array;
+    take_s_im(): Float64Array;
+    take_s_re(): Float64Array;
+    take_t_im(): Float64Array;
+    take_t_re(): Float64Array;
+    take_z0(): Float64Array;
+    take_z0_im(): Float64Array;
+    take_z_im(): Float64Array;
+    take_z_re(): Float64Array;
+}
+
 /**
  * Multiply AF intensity `total` (row-major `i2 * n1 + i1`) by the element
  * power pattern. Returns the new peak. Cos^n uses `[max(w,0)]^n` and is 0
@@ -60,12 +93,41 @@ export class PatternMetrics {
 export function apply_element_pattern(domain: number, ax1: Float32Array, ax2: Float32Array, total: Float32Array, kind: number, n: number): number;
 
 /**
+ * Multiply AF intensity `total` by PEC-dipole \(|F^\mathrm{iso}|^2\).
+ * Same grid as `apply_element_pattern`. Does not replace isotropic / cos^n.
+ * Invalid params leave `total` unchanged and still return a finite peak.
+ */
+export function apply_green_pec_pattern(domain: number, ax1: Float32Array, ax2: Float32Array, total: Float32Array, h: number, ell: number, freq_scale: number): number;
+
+/**
+ * Multiply AF intensity `total` by slab-dipole \(|F^\mathrm{iso}|^2\).
+ * Same grid as `apply_green_pec_pattern`. Invalid params leave `total` unchanged.
+ */
+export function apply_green_slab_pattern(domain: number, ax1: Float32Array, ax2: Float32Array, total: Float32Array, h: number, ell: number, freq_scale: number, eps_r: number, h_sub: number, tan_delta: number): number;
+
+/**
  * Power-conserving cos^n exponent from peak element gain in dBi:
  * `n = 10^(element_gain/10)/2 - 1`, clamped at 0.
  */
 export function element_exponent_from_peak_dbi(gain_dbi: number): number;
 
 export function extract_pattern_metrics(domain: number, ax1: Float32Array, ax2: Float32Array, total: Float32Array, req_theta_rad: number, req_phi_rad: number): PatternMetrics;
+
+/**
+ * Isolated-element slab power budget at \(|I|=1\,\mathrm{A}\):
+ * `[re_z_self, p_rad, p_sw, p_diss, closure_residual]`.
+ */
+export function slab_dipole_power_budget_wasm(h: number, ell: number, a: number, freq_scale: number, eps_r: number, h_sub: number, tan_delta: number): Float64Array;
+
+/**
+ * Isolated PEC-dipole self impedance \(Z_{11}\) in ohms: `[re, im]`.
+ */
+export function z_self_pec_dipole(h: number, ell: number, a: number, freq_scale: number): Float64Array;
+
+/**
+ * Isolated slab-dipole self impedance \(Z_{11}\) in ohms: `[re, im]`.
+ */
+export function z_self_slab_dipole(h: number, ell: number, a: number, freq_scale: number, eps_r: number, h_sub: number, tan_delta: number): Float64Array;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -104,6 +166,7 @@ export interface InitOutput {
     readonly __wbg_get_patternmetrics_squint_ax2_deg: (a: number) => number;
     readonly __wbg_get_patternmetrics_squint_deg: (a: number) => number;
     readonly __wbg_patternmetrics_free: (a: number, b: number) => void;
+    readonly __wbg_radiatedpowerkernel_free: (a: number, b: number) => void;
     readonly __wbg_set_patternmetrics_hpbw_ax1: (a: number, b: number) => void;
     readonly __wbg_set_patternmetrics_hpbw_ax1_clipped: (a: number, b: number) => void;
     readonly __wbg_set_patternmetrics_hpbw_ax1_deg: (a: number, b: number) => void;
@@ -136,6 +199,8 @@ export interface InitOutput {
     readonly __wbg_set_patternmetrics_squint_ax2_deg: (a: number, b: number) => void;
     readonly __wbg_set_patternmetrics_squint_deg: (a: number, b: number) => void;
     readonly apply_element_pattern: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any, i: number, j: number) => number;
+    readonly apply_green_pec_pattern: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any, i: number, j: number, k: number) => number;
+    readonly apply_green_slab_pattern: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: any, i: number, j: number, k: number, l: number, m: number, n: number) => number;
     readonly element_exponent_from_peak_dbi: (a: number) => number;
     readonly extract_pattern_metrics: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly farfieldkernel_accumulate_tile: (a: number, b: number, c: number, d: number, e: number) => void;
@@ -144,6 +209,37 @@ export interface InitOutput {
     readonly farfieldkernel_prepare: (a: number, b: number, c: number) => void;
     readonly farfieldkernel_set_inputs: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => void;
     readonly farfieldkernel_take_total: (a: number) => [number, number];
+    readonly radiatedpowerkernel_compute: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
+    readonly radiatedpowerkernel_compute_j0: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
+    readonly radiatedpowerkernel_fill_green_pec_dipole_z: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
+    readonly radiatedpowerkernel_fill_green_slab_dipole_z: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => void;
+    readonly radiatedpowerkernel_fill_isolated: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
+    readonly radiatedpowerkernel_fill_isolated_range: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
+    readonly radiatedpowerkernel_form_from_z: (a: number, b: number, c: number, d: number) => void;
+    readonly radiatedpowerkernel_form_gram: (a: number) => void;
+    readonly radiatedpowerkernel_form_green_pec_dipole: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => void;
+    readonly radiatedpowerkernel_form_green_slab_dipole: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number) => void;
+    readonly radiatedpowerkernel_form_matched_s: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => void;
+    readonly radiatedpowerkernel_form_matched_s_propagation: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => void;
+    readonly radiatedpowerkernel_match_iterations: (a: number) => number;
+    readonly radiatedpowerkernel_match_residual: (a: number) => number;
+    readonly radiatedpowerkernel_n_elements: (a: number) => number;
+    readonly radiatedpowerkernel_n_samples: (a: number) => number;
+    readonly radiatedpowerkernel_new: () => number;
+    readonly radiatedpowerkernel_set_quadrature: (a: number, b: number, c: number) => void;
+    readonly radiatedpowerkernel_take_im: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_re: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_s_im: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_s_re: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_t_im: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_t_re: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_z0: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_z0_im: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_z_im: (a: number) => [number, number];
+    readonly radiatedpowerkernel_take_z_re: (a: number) => [number, number];
+    readonly slab_dipole_power_budget_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+    readonly z_self_pec_dipole: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly z_self_slab_dipole: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
