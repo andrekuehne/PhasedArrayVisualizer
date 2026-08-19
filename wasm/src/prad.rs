@@ -5,6 +5,7 @@
 
 use crate::bessel::j0f;
 use crate::element::{PATTERN_COS_N, PATTERN_ISOTROPIC};
+use crate::green::z_pair_pec_dipole;
 use crate::match_s::MatchedS;
 use crate::quadrature::HemisphereQuad;
 use crate::sincos::{load4, sincos_f32x4, store4};
@@ -274,6 +275,19 @@ impl PradState {
 		self.match_residual = 0.0;
 	}
 
+	fn apply_matched(&mut self, m: MatchedS) {
+		self.z0 = m.z0;
+		self.z0_im = m.z0_im;
+		self.r_re = m.r_re;
+		self.r_im = m.r_im;
+		self.s_re = m.s_re;
+		self.s_im = m.s_im;
+		self.t_re = m.t_re;
+		self.t_im = m.t_im;
+		self.match_iterations = m.iterations;
+		self.match_residual = m.residual;
+	}
+
 	/// \(R = 2 Z_\mathrm{ref} P_H\), optional \(jX(\Delta x,\Delta y)+jX_\mathrm{self}I\),
 	/// real \(z_0\), power-wave \(S\). Uses the current Gram; does not fill \(A\).
 	/// Finite \(z_\mathrm{common,re}>0\) skips the per-port solver.
@@ -307,16 +321,7 @@ impl PradState {
 			z_common_re as f64,
 			x_self as f64,
 		);
-		self.z0 = m.z0;
-		self.z0_im = m.z0_im;
-		self.r_re = m.r_re;
-		self.r_im = m.r_im;
-		self.s_re = m.s_re;
-		self.s_im = m.s_im;
-		self.t_re = m.t_re;
-		self.t_im = m.t_im;
-		self.match_iterations = m.iterations;
-		self.match_residual = m.residual;
+		self.apply_matched(m);
 	}
 
 	/// Like [`Self::form_matched_s`] with the propagation \(X\) overlay.
@@ -353,16 +358,47 @@ impl PradState {
 			z_common_re as f64,
 			x_self as f64,
 		);
-		self.z0 = m.z0;
-		self.z0_im = m.z0_im;
-		self.r_re = m.r_re;
-		self.r_im = m.r_im;
-		self.s_re = m.s_re;
-		self.s_im = m.s_im;
-		self.t_re = m.t_re;
-		self.t_im = m.t_im;
-		self.match_iterations = m.iterations;
-		self.match_residual = m.residual;
+		self.apply_matched(m);
+	}
+
+	/// Naïve \(N^2\) PEC-dipole \(Z\) from [`z_pair_pec_dipole`], then
+	/// [`MatchedS::from_z`]. No Gram. Unique-lag fill is WP3.
+	pub fn form_green_pec_dipole(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		h: f32,
+		ell: f32,
+		a: f32,
+		z_ref: f32,
+		z_common_re: f32,
+	) {
+		if x.len() != y.len() || x.is_empty() {
+			self.n = 0;
+			self.clear_matched();
+			return;
+		}
+		let n = x.len();
+		self.n = n;
+		let nn = n * n;
+		let mut z_re = vec![0.0f64; nn];
+		let mut z_im = vec![0.0f64; nn];
+		let h = h as f64;
+		let ell = ell as f64;
+		let a = a as f64;
+		let fs = frequency_scale as f64;
+		for p in 0..n {
+			for q in 0..n {
+				let dx = x[p] as f64 - x[q] as f64;
+				let dy = y[p] as f64 - y[q] as f64;
+				let (re, im) = z_pair_pec_dipole(dx, dy, h, ell, a, fs);
+				z_re[p * n + q] = re;
+				z_im[p * n + q] = im;
+			}
+		}
+		let m = MatchedS::from_z(&z_re, &z_im, n, z_ref as f64, z_common_re as f64);
+		self.apply_matched(m);
 	}
 }
 
@@ -922,5 +958,92 @@ mod tests {
 		close64(s.r_im[1], s.r_im[3], 1e-12, "X01 = X10");
 		close64(s.z0[0], Z_REF, 0.0, "z0");
 		close64(s.r_re[0], 2.0 * Z_REF as f64 * s.p_re[0] as f64, 1e-6, "R00 gram");
+	}
+
+	#[test]
+	fn green_n1_matches_z_pair_self_no_gram() {
+		use crate::green::{z_pair_pec_dipole, DEFAULT_A, DEFAULT_ELL, DEFAULT_H};
+		use crate::match_s::Z_REF;
+		let h = DEFAULT_H as f32 as f64;
+		let ell = DEFAULT_ELL as f32 as f64;
+		let a = DEFAULT_A as f32 as f64;
+		let mut s = PradState::new();
+		let p_re_before = s.p_re.len();
+		s.form_green_pec_dipole(
+			&[0.0],
+			&[0.0],
+			1.0,
+			h as f32,
+			ell as f32,
+			a as f32,
+			Z_REF as f32,
+			0.0,
+		);
+		assert_eq!(s.n_elements(), 1);
+		assert_eq!(s.p_re.len(), p_re_before);
+		let (z_re, z_im) = z_pair_pec_dipole(0.0, 0.0, h, ell, a, 1.0);
+		close64(s.r_re[0], z_re, 1e-12, "Z11 re");
+		close64(s.r_im[0], z_im, 1e-12, "Z11 im");
+		assert!(z_re > 0.0 && z_im.is_finite());
+		let zc = z_re;
+		s.form_green_pec_dipole(
+			&[0.0],
+			&[0.0],
+			1.0,
+			h as f32,
+			ell as f32,
+			a as f32,
+			Z_REF as f32,
+			zc as f32,
+		);
+		close64(s.z0[0], zc as f32 as f64, 1e-6, "z0 = Re Z11");
+		assert_eq!(s.s_re.len(), 1);
+		assert_eq!(s.t_re.len(), 1);
+		assert!(s.s_re[0].is_finite() && s.s_im[0].is_finite());
+		assert!(s.t_re[0].is_finite() && s.t_im[0].is_finite());
+		let mag_s = s.s_re[0].hypot(s.s_im[0]);
+		assert!(mag_s > 1e-3, "|S11| leftover X {mag_s}");
+	}
+
+	#[test]
+	fn green_n2_reciprocal_matches_z_pair() {
+		use crate::green::{z_pair_pec_dipole, DEFAULT_A, DEFAULT_ELL, DEFAULT_H};
+		use crate::match_s::Z_REF;
+		let h = DEFAULT_H as f32 as f64;
+		let ell = DEFAULT_ELL as f32 as f64;
+		let a = DEFAULT_A as f32 as f64;
+		let x = [0.0f32, 0.5];
+		let y = [0.0f32, 0.0];
+		let mut s = PradState::new();
+		s.form_green_pec_dipole(
+			&x,
+			&y,
+			1.0,
+			h as f32,
+			ell as f32,
+			a as f32,
+			Z_REF as f32,
+			Z_REF as f32,
+		);
+		assert_eq!(s.n_elements(), 2);
+		assert_eq!(s.s_re.len(), 4);
+		assert_eq!(s.s_im.len(), 4);
+		assert_eq!(s.t_re.len(), 4);
+		assert_eq!(s.t_im.len(), 4);
+		close64(s.r_re[1], s.r_re[2], 1e-12, "Z12 re = Z21 re");
+		close64(s.r_im[1], s.r_im[2], 1e-12, "Z12 im = Z21 im");
+		close64(s.s_re[1], s.s_re[2], 1e-12, "S12 re = S21 re");
+		close64(s.s_im[1], s.s_im[2], 1e-12, "S12 im = S21 im");
+		let (z12_re, z12_im) = z_pair_pec_dipole(
+			x[0] as f64 - x[1] as f64,
+			y[0] as f64 - y[1] as f64,
+			h,
+			ell,
+			a,
+			1.0,
+		);
+		close64(s.r_re[1], z12_re, 1e-12, "Z12 vs z_pair");
+		close64(s.r_im[1], z12_im, 1e-12, "Z12 im vs z_pair");
+		assert!(s.p_re.is_empty(), "Green path must not fill Gram");
 	}
 }

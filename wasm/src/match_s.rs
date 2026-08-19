@@ -167,6 +167,39 @@ impl MatchedS {
 		Self::from_z_common(r_re, r_im, n, z_ref, zc, has_x)
 	}
 
+	/// Complex \(Z\) already in ohms. Does **not** scale a Gram. Always a
+	/// common real \(z_c\) (non-positive or non-finite \(z_c\) becomes
+	/// \(z_\mathrm{ref}\)). Green-mode match entry.
+	pub fn from_z(
+		z_re: &[f64],
+		z_im: &[f64],
+		n: usize,
+		z_ref: f64,
+		z_common_re: f64,
+	) -> Self {
+		let z_ref = if z_ref.is_finite() && z_ref > 0.0 {
+			z_ref
+		} else {
+			Z_REF
+		};
+		if n == 0 || z_re.len() != n * n {
+			return Self::empty();
+		}
+		let nn = n * n;
+		let r_re = z_re.to_vec();
+		let mut r_im = vec![0.0f64; nn];
+		if z_im.len() == nn {
+			r_im.copy_from_slice(z_im);
+		}
+		let has_x = r_im.iter().any(|&x| x != 0.0);
+		let zc = if z_common_re.is_finite() && z_common_re > 0.0 {
+			z_common_re
+		} else {
+			z_ref
+		};
+		Self::from_z_common(r_re, r_im, n, z_ref, zc, has_x)
+	}
+
 	/// Real \(z_0\) on \(\Re(Z)\); Hermitian Cholesky for \(S\) and \(T\).
 	fn from_z_real(r_re: Vec<f64>, r_im: Vec<f64>, n: usize, z_ref: f64) -> Self {
 		let nn = n * n;
@@ -1053,6 +1086,34 @@ mod tests {
 		close(m.t_re[0], 1.0, 1e-12, "T11");
 		close(m.t_im[0], 0.0, 1e-12, "T11 im");
 		assert!(m.residual < TAU, "residual {}", m.residual);
+	}
+
+	#[test]
+	fn from_z_n1_real_is_open() {
+		let z_re = [Z_REF];
+		let z_im = [0.0];
+		let m = MatchedS::from_z(&z_re, &z_im, 1, Z_REF, Z_REF);
+		assert_eq!(m.n, 1);
+		close(m.z0[0], Z_REF, 0.0, "z0");
+		close(m.z0_im[0], 0.0, 0.0, "z0 im");
+		close(m.r_re[0], Z_REF, 0.0, "Z11");
+		close(m.s_re[0], 0.0, 1e-12, "S11 re");
+		close(m.s_im[0], 0.0, 1e-12, "S11 im");
+		close(m.t_re[0], 1.0, 1e-12, "T11");
+		close(m.t_im[0], 0.0, 1e-12, "T11 im");
+		assert_eq!(m.iterations, 0);
+	}
+
+	#[test]
+	fn from_z_invalid_zc_clamps_to_zref() {
+		let z_re = [Z_REF];
+		let z_im = [0.0];
+		let m = MatchedS::from_z(&z_re, &z_im, 1, Z_REF, f64::NAN);
+		close(m.z0[0], Z_REF, 0.0, "z0");
+		close(m.s_re[0], 0.0, 1e-12, "S11");
+		close(m.t_re[0], 1.0, 1e-12, "T11");
+		let m0 = MatchedS::from_z(&z_re, &z_im, 1, Z_REF, 0.0);
+		close(m0.z0[0], Z_REF, 0.0, "z0 from 0");
 	}
 
 	#[test]

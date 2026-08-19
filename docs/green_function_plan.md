@@ -334,6 +334,29 @@ from_z is the only match entry for Green mode.
 Naïve N² z_pair fill exists; replace with unique-lag in WP3.
 ```
 
+### WP2 results (implemented)
+
+- Files: `wasm/src/match_s.rs` (`MatchedS::from_z`); `wasm/src/prad.rs` (`form_green_pec_dipole` naïve \(N^2\)); `wasm/src/lib.rs` bindgen of the same name. `take_s_*` / `take_t_*` / `take_z_*` unchanged.
+- Signatures:
+
+```text
+MatchedS::from_z(z_re, z_im, n, z_ref, z_common_re)
+  // Z already ohms; no Gram scale. Invalid z_c → z_ref. Always common real z_c.
+PradState / RadiatedPowerKernel::form_green_pec_dipole(
+  x, y, frequency_scale, h, ell, a, z_ref, z_common_re)
+  // Z_pq at p*n+q, dx=x[p]-x[q], dy=y[p]-y[q]; diagonal is WP1 self.
+```
+
+- Physics for WP3: Green \(Z\) never uses \(P_H\). \(N=1\) \(S=0,T=1\) only for **real** \(Z_{11}=z_c\); dipole \(X_\mathrm{fs}\) leaves \(|S_{11}|\). Rebuild: `./wasm/build.ps1`.
+- Tests: `cargo test --manifest-path wasm/Cargo.toml` (`from_z_n1_real_is_open`, `from_z_invalid_zc_clamps_to_zref`, `green_n1_matches_z_pair_self_no_gram`, `green_n2_reciprocal_matches_z_pair`; 95 wasm tests).
+- Next: WP3 unique-lag fill. Do not change GUI.
+
+```text
+WP2 done. Next: WP3.
+from_z is the only match entry for Green mode.
+Naïve N² z_pair fill exists; replace with unique-lag in WP3.
+```
+
 ---
 
 ## 9. WP3 — Unique-lag fill + performance

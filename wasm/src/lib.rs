@@ -197,6 +197,29 @@ impl RadiatedPowerKernel {
 		);
 	}
 
+	pub fn form_green_pec_dipole(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		h: f32,
+		ell: f32,
+		a: f32,
+		z_ref: f32,
+		z_common_re: f32,
+	) {
+		self.state.form_green_pec_dipole(
+			x,
+			y,
+			frequency_scale,
+			h,
+			ell,
+			a,
+			z_ref,
+			z_common_re,
+		);
+	}
+
 	pub fn take_z0(&self) -> Vec<f64> {
 		self.state.z0.clone()
 	}

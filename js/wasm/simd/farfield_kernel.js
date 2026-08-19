@@ -575,6 +575,23 @@ export class RadiatedPowerKernel {
         wasm.radiatedpowerkernel_form_gram(this.__wbg_ptr);
     }
     /**
+     * @param {Float32Array} x
+     * @param {Float32Array} y
+     * @param {number} frequency_scale
+     * @param {number} h
+     * @param {number} ell
+     * @param {number} a
+     * @param {number} z_ref
+     * @param {number} z_common_re
+     */
+    form_green_pec_dipole(x, y, frequency_scale, h, ell, a, z_ref, z_common_re) {
+        const ptr0 = passArrayF32ToWasm0(x, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(y, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.radiatedpowerkernel_form_green_pec_dipole(this.__wbg_ptr, ptr0, len0, ptr1, len1, frequency_scale, h, ell, a, z_ref, z_common_re);
+    }
+    /**
      * @param {number} z_ref
      * @param {Float32Array} x
      * @param {Float32Array} y
