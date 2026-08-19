@@ -557,6 +557,31 @@ Next optional: WP6 spectral validation, then WP7 slab.
 
 If this is slow, fix quadrature here (not in WP7).
 
+### WP6 results (implemented)
+
+- Files: `wasm/src/green_spectral.rs` (Sommerfeld \(Z\) + saddle-point \(F^\mathrm{iso}\) + tests); `mod green_spectral;` in `wasm/src/lib.rs`; `wasm/src/prad.rs` unique-lag fill takes a \(z_\mathrm{pair}\) callback so the WP3 driver can call the spectral kernel in tests. `green.rs` closed form is still the production path. No wasm-bindgen, no GUI, no \(\varepsilon_r\).
+- Signatures:
+
+```text
+SpectralQuadConfig { n_k_prop, n_k_evan, k_evan_max_over_k, n_lobes }
+DEFAULT: 48, 32, 12, 40
+z_pair_pec_dipole_spectral(dx, dy, h, ell, a, freq_scale) -> (re, im)
+f_iso_pec_dipole_spectral(theta, phi, h, ell, freq_scale) -> (Eθ, Eφ)
+```
+
+- Quadrature: propagating \(\alpha\) (\(k_\rho=k\sin\alpha\)) and evanescent \(\beta\) (\(k_\rho=k\cosh\beta\)) remove the \(k_z=0\) branch point. Angular integral is \(J_0,J_2\) (no \(\phi_k\) grid). Coplanar \(z=0\) tail uses Bessel lobes + Wynn \(\varepsilon\). Mutual is Hertzian (moment \(I\ell\)), same as WP1; self is \(Z_\mathrm{fs}-Z(0,0,2h)\). \(F^\mathrm{iso}\) is the space-wave saddle of the same spectral \(\tilde E\).
+- Errors vs `green.rs` (release): self \(|\Delta Z|\sim 3\times 10^{-14}\); mutual \(\sim 10^{-8}\)–\(10^{-10}\,\Omega\) on the WP6 lag grid. \(|F|^2\) matches to \(10^{-12}\). 4×4 unique-lag \(Z\) and `form_from_z` \(S,T\) (faer) agree to \(<10^{-3}\).
+- Per-lag (native release): closed \(\sim 0.001\,\mu\mathrm{s}\); spectral \(\sim 50\,\mu\mathrm{s}\) (self) / \(\sim 200\)–\(300\,\mu\mathrm{s}\) (mutual). Production stays closed-form.
+
+```text
+WP6 done. Next: WP7 grounded slab.
+Spectral gate: green_spectral.rs matches green.rs within 1e-8 Ω typical (self 3e-14).
+Defaults: n_k_prop=48, n_k_evan=32, k_evan_max/k=12, n_lobes=40
+Per-lag: closed ~0.001 µs, spectral ~50–300 µs.
+Production: still z_pair_pec_dipole (closed form).
+WP7: reuse green_spectral.rs integrator; add slab Γ(kρ) + TM0 residue. Do not add ε_r here.
+```
+
 ---
 
 ## 13. WP7 — Grounded dielectric slab \(G\)

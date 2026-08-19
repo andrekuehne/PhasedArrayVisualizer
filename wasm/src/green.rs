@@ -90,7 +90,11 @@ fn geometry_ok(h: f64, ell: f64, a: f64, freq_scale: f64) -> bool {
 }
 
 /// Free-space short-dipole \(Z_\mathrm{fs}=R_\mathrm{fs}+j X_\mathrm{fs}\) (no image).
-fn z_fs(ell: f64, a: f64, freq_scale: f64) -> Cpx {
+pub(crate) fn z_fs(ell: f64, a: f64, freq_scale: f64) -> (f64, f64) {
+	z_fs_cpx(ell, a, freq_scale).tuple()
+}
+
+fn z_fs_cpx(ell: f64, a: f64, freq_scale: f64) -> Cpx {
 	let k = k_of(freq_scale);
 	let kell = k * ell;
 	let r_fs = ETA0 * kell * kell / (6.0 * PI);
@@ -148,7 +152,7 @@ pub fn z_pair_pec_dipole(
 	}
 	let z_img = z_hertzian_x(dx, dy, 2.0 * h, ell, freq_scale);
 	let z = if dx == 0.0 && dy == 0.0 {
-		z_fs(ell, a, freq_scale).sub(z_img)
+		z_fs_cpx(ell, a, freq_scale).sub(z_img)
 	} else {
 		z_hertzian_x(dx, dy, 0.0, ell, freq_scale).sub(z_img)
 	};
@@ -191,7 +195,7 @@ pub fn f_iso_pec_dipole_power(theta: f64, phi: f64, h: f64, ell: f64, freq_scale
 
 #[cfg(test)]
 fn z_fs_only(ell: f64, a: f64, freq_scale: f64) -> (f64, f64) {
-	z_fs(ell, a, freq_scale).tuple()
+	z_fs(ell, a, freq_scale)
 }
 
 #[cfg(test)]

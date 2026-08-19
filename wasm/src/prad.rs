@@ -378,6 +378,17 @@ impl PradState {
 		ell: f32,
 		a: f32,
 	) {
+		let h = h as f64;
+		let ell = ell as f64;
+		let a = a as f64;
+		let fs = frequency_scale as f64;
+		self.fill_green_pec_z_with(x, y, |dx, dy| z_pair_pec_dipole(dx, dy, h, ell, a, fs));
+	}
+
+	fn fill_green_pec_z_with<F>(&mut self, x: &[f32], y: &[f32], mut z_pair: F)
+	where
+		F: FnMut(f64, f64) -> (f64, f64),
+	{
 		if x.len() != y.len() || x.is_empty() {
 			self.n = 0;
 			self.n_unique_lag = 0;
@@ -392,10 +403,6 @@ impl PradState {
 		self.r_re.resize(nn, 0.0);
 		self.r_im.clear();
 		self.r_im.resize(nn, 0.0);
-		let h = h as f64;
-		let ell = ell as f64;
-		let a = a as f64;
-		let fs = frequency_scale as f64;
 		if let Some((nx, ny, ix, iy, xs, ys)) = uniform_product_lattice(x, y) {
 			let mut tre = vec![0.0f64; nx * ny];
 			let mut tim = vec![0.0f64; nx * ny];
@@ -403,7 +410,7 @@ impl PradState {
 				for dj in 0..ny {
 					let dx = xs[di] as f64 - xs[0] as f64;
 					let dy = ys[dj] as f64 - ys[0] as f64;
-					let (re, im) = z_pair_pec_dipole(dx, dy, h, ell, a, fs);
+					let (re, im) = z_pair(dx, dy);
 					let k = di * ny + dj;
 					tre[k] = re;
 					tim[k] = im;
@@ -430,9 +437,7 @@ impl PradState {
 					let dx = (x[p] as f64 - x[q] as f64).abs();
 					let dy = (y[p] as f64 - y[q] as f64).abs();
 					let key = (dx.to_bits(), dy.to_bits());
-					let (re, im) = *cache.entry(key).or_insert_with(|| {
-						z_pair_pec_dipole(dx, dy, h, ell, a, fs)
-					});
+					let (re, im) = *cache.entry(key).or_insert_with(|| z_pair(dx, dy));
 					self.r_re[p * n + q] = re;
 					self.r_im[p * n + q] = im;
 					self.r_re[q * n + p] = re;
@@ -441,6 +446,25 @@ impl PradState {
 			}
 			self.n_unique_lag = cache.len();
 		}
+	}
+
+	#[cfg(test)]
+	fn fill_green_pec_dipole_z_spectral(
+		&mut self,
+		x: &[f32],
+		y: &[f32],
+		frequency_scale: f32,
+		h: f32,
+		ell: f32,
+		a: f32,
+	) {
+		let h = h as f64;
+		let ell = ell as f64;
+		let a = a as f64;
+		let fs = frequency_scale as f64;
+		self.fill_green_pec_z_with(x, y, |dx, dy| {
+			crate::green_spectral::z_pair_pec_dipole_spectral(dx, dy, h, ell, a, fs)
+		});
 	}
 
 	/// [`MatchedS::from_z`] on the current Green \(Z\) (`r_re`/`r_im`).
@@ -1300,5 +1324,59 @@ mod tests {
 			max_d = max_d.max((uniq.r_im[i] - naive.r_im[i]).abs());
 		}
 		assert!(max_d < 1e-12, "irregular unique vs naïve max|Δ|={max_d}");
+	}
+
+	fn max_abs_diff(a: &[f64], b: &[f64]) -> f64 {
+		a.iter()
+			.zip(b.iter())
+			.map(|(x, y)| (x - y).abs())
+			.fold(0.0f64, f64::max)
+	}
+
+	#[test]
+	fn spectral_lag_fill_matches_closed_4x4() {
+		use crate::green::{DEFAULT_A, DEFAULT_ELL, DEFAULT_H};
+		let h = DEFAULT_H as f32;
+		let ell = DEFAULT_ELL as f32;
+		let a = DEFAULT_A as f32;
+		let (x, y) = rect_xy(4, 4, 0.5, 0.5);
+		let mut closed = PradState::new();
+		let mut spectral = PradState::new();
+		closed.fill_green_pec_dipole_z(&x, &y, 1.0, h, ell, a);
+		spectral.fill_green_pec_dipole_z_spectral(&x, &y, 1.0, h, ell, a);
+		assert_eq!(closed.n_unique_lag, 16);
+		assert_eq!(spectral.n_unique_lag, 16);
+		let mut max_d = 0.0f64;
+		for i in 0..closed.r_re.len() {
+			max_d = max_d.max((closed.r_re[i] - spectral.r_re[i]).abs());
+			max_d = max_d.max((closed.r_im[i] - spectral.r_im[i]).abs());
+		}
+		assert!(max_d < 1e-3, "spectral vs closed unique-lag max|ΔZ|={max_d}");
+	}
+
+	#[test]
+	fn spectral_z_from_z_agrees_closed_4x4() {
+		use crate::green::{DEFAULT_A, DEFAULT_ELL, DEFAULT_H};
+		use crate::match_s::Z_REF;
+		let h = DEFAULT_H as f32;
+		let ell = DEFAULT_ELL as f32;
+		let a = DEFAULT_A as f32;
+		let (x, y) = rect_xy(4, 4, 0.5, 0.5);
+		let mut closed = PradState::new();
+		let mut spectral = PradState::new();
+		closed.fill_green_pec_dipole_z(&x, &y, 1.0, h, ell, a);
+		spectral.fill_green_pec_dipole_z_spectral(&x, &y, 1.0, h, ell, a);
+		closed.form_from_z(Z_REF as f32, Z_REF as f32, 0.0);
+		spectral.form_from_z(Z_REF as f32, Z_REF as f32, 0.0);
+		let ds = max_abs_diff(&closed.s_re, &spectral.s_re)
+			.max(max_abs_diff(&closed.s_im, &spectral.s_im));
+		let dt = max_abs_diff(&closed.t_re, &spectral.t_re)
+			.max(max_abs_diff(&closed.t_im, &spectral.t_im));
+		assert!(ds < 1e-3, "from_z S spectral vs closed max|Δ|={ds}");
+		assert!(dt < 1e-3, "from_z T spectral vs closed max|Δ|={dt}");
+		assert!(
+			closed.p_re.is_empty() && spectral.p_re.is_empty(),
+			"Green path must not fill Gram"
+		);
 	}
 }
